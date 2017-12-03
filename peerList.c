@@ -53,7 +53,6 @@ void appendPeer(unsigned char ipVersion, const char* ipAddress) {
 	Peer* peer = (Peer*)malloc(sizeof(Peer));
 	memset(peer, 0, sizeof(Peer));
 	peer->ipVersion = ipVersion;
-	memcpy(peer->ipv4address, ipAddress, ipVersion == IPV4 ? 4 : 16);
 	if(peerList == NULL) {
 		// the list is empty
 		peerList = peer;

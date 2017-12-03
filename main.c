@@ -25,22 +25,25 @@
 #include "peerList.h"
 
 
-// FUCK FUCK FUCK FUCK FUCK
-// EIGENTLICH BRAUCHT MAN GAR NICHT DIE IP ZU KODIEREN
-// DIE BEKOMMEN JA ALLE DADURCH DASS SIE DAVON EMPFANGEN
-// DIE GANZE PACKETSTRUKTUR MUSS NOCHMAL GEÄNDERT WERDEN!!
-
 void sigintHandler(int unused) {
 	logger("\nreceived SIGINT, shutting down...\n");
 	setShutdown(1);
 }
 
+// the broadcasting thread is responsible for continously discovering
+// new peers and responding to discovery packets sent by other peers
+// this status should be in the peerList
+// whenever the broadcastThread discovers a new peer it should add it to the
+// peerList
+// discovery broadcast packets are sent in a fixed interval for now like 20 sec
 void* broadcastThread(void* tid) {
 	logger("broadcastThread started\n");
 
-	int broadcastListener = createUDPListener(BROADCAST_LISTENER_PORT_STRING);
+	int broadcastListener = createBroadcastListener();
 	logger("listening to broadcast @ %d\n", broadcastListener);
-	sendBroadcastDiscover(); // initial discovery
+	//sendBroadcastDiscover(); // initial discovery
+	sendIpv6Multicast();
+	sendIpv4Broadcasts();
 	struct timeval lastBroadcastDiscovery;
 	gettimeofday(&lastBroadcastDiscovery, NULL);
 
@@ -50,7 +53,7 @@ void* broadcastThread(void* tid) {
 
 	while(!getShutdown()) {
 		// check if we need to do another broadcast
-		struct timeval now;
+		/*struct timeval now;
 		gettimeofday(&now, NULL);
 		double elapsedTime = (now.tv_sec - lastBroadcastDiscovery.tv_sec) * 1000.0; // sec to ms
 		elapsedTime += (now.tv_usec - lastBroadcastDiscovery.tv_usec) / 1000.0;		// us to ms
@@ -61,10 +64,7 @@ void* broadcastThread(void* tid) {
 			gettimeofday(&lastBroadcastDiscovery, NULL);
 			sendBroadcastDiscover();
 		}
-
-	    char receiveBuffer[128];
-	    struct sockaddr_storage otherAddress;
-	    socklen_t otherLength = sizeof(otherAddress);
+		*/
 
 	    fd_set read_fds = master_fds;
 	    struct timeval timeout;
@@ -80,34 +80,54 @@ void* broadcastThread(void* tid) {
 	    	continue;
 	    }
 
+	    char receiveBuffer[128];
+	    struct sockaddr_storage otherAddress;
+	    socklen_t otherLength = sizeof(otherAddress);
+
 	    int receivedBytes = recvfrom(broadcastListener, receiveBuffer, sizeof(receiveBuffer)-1, 0, (struct sockaddr*)&otherAddress, &otherLength);
 
 	    // TEST BROADCASTING WITH socat - udp-datagram:134.130.223.255:44700,broadcast
+	    // or socat - upd6-sendto:[ipv6_address]:port
 	    if(receivedBytes == -1) {
 	    	logger("recvfrom failed %s\n", strerror(errno));
 	    	continue;
 	    }
 	    if(receivedBytes == 0) {
+	    	logger("got zero bytes :/\n");
 	    	continue;
 	    }
-	    if(receivedBytes == sizeof(Packet) && isPacketValid((Packet*)receiveBuffer)) {
-	    	Packet* packet = (Packet*)receiveBuffer;
-	    	//printPacket((Packet*)receiveBuffer); // this always prints out our own broadcast packets as well which is a bit annoying
-            unsigned char ipVersion = packet->ipVersion;
-            const char* ipAddress = packet->ipv4address;
-            if(isOwnAddress(ipVersion, ipAddress)) {
+
+	    Packet* packet = (Packet*)receiveBuffer;
+	    if(receivedBytes == sizeof(Packet) && isPacketValid(packet)) {
+            if(isOwnAddress((struct sockaddr*)&otherAddress)) {
                 // we do not want to deal with our own messages
                 continue;
             }
-            // when we reach this point this is a valid broadcast message from some other peer
-            printPacket(packet);
-            // we also want to respond to this client to say that we are available
-            //sendAvailablePacket(&otherAddress);
+
+            // when we reach this point this is a valid message from some other peer
+            // check whether this is a discover request or an available message
+            switch(packet->messageType) {
+            case MESSAGE_TYPE_DISCOVER:
+            	// we want to respond to a discovery request
+            	logger("got discover packet from "); printIpAddress((struct sockaddr*)&otherAddress); logger("\n");
+            	sendAvailablePacket((struct sockaddr*)&otherAddress);
+            	break;
+            case MESSAGE_TYPE_AVAILABLE:
+            	// when someone responded to our discovery request we should store their online status somewhere !!
+            	logger("received available packet from: "); printIpAddress((struct sockaddr*)&otherAddress); logger("\n");
+            	break;
+            default:
+            	// this should never happen
+            	break;
+            }
 	    } else {
 	    	// either we did receive a wrong amount of bytes or printPacket failed (success == 0)
-	    	logger("recveived %d bytes: %s\n", receivedBytes, receiveBuffer);
+	    	logger("received %d bytes: %s\n", receivedBytes, receiveBuffer);
 	    }
 	}
+
+	//cleanup
+	close(broadcastListener);
 	logger("broadcastThread ended\n");
 	return NULL;
 }
