@@ -92,6 +92,8 @@ void* broadcastThread(void* tid) {
 			gettimeofday(&lastBroadcastDiscovery, NULL); // reset the timer
             sendIpv6Multicast(ownId);
             sendIpv4Broadcasts(ownId);
+
+            printPeerList();
 		}
 
 	    fd_set read_fds = master_fds;
@@ -137,18 +139,26 @@ void* broadcastThread(void* tid) {
             switch(packet->messageType) {
             case MESSAGE_TYPE_DISCOVER:
             	// we want to respond to a discovery request
-            	logger("["); printSenderId(packet->senderId); logger("]");
+            	/*logger("["); printSenderId(packet->senderId); logger("]");
             	logger("[DISCOVERY]");
             	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
             	logger("\n");
+            	*/
             	sendAvailablePacket((struct sockaddr*)&otherAddress, ownId);
             	break;
             case MESSAGE_TYPE_AVAILABLE:
-            	// when someone responded to our discovery request we should store their online status somewhere !!
-            	logger("["); printSenderId(packet->senderId); logger("]");
+            	/*logger("["); printSenderId(packet->senderId); logger("]");
             	logger("[AVAILABLE]");
             	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
             	logger("\n");
+            	*/
+
+            	// we have seen the peer just now
+            	logger("");
+            	struct timeval lastSeen;
+            	gettimeofday(&lastSeen, NULL);
+            	addIpToPeer(packet->senderId, (struct sockaddr*)&otherAddress, lastSeen);
+
             	break;
             default:
             	// this should never happen
@@ -168,6 +178,28 @@ void* broadcastThread(void* tid) {
 
 void* commandThread(void* tid) {
 	logger("commandThread started\n");
+
+	// the command thread needs to have an in-memory representation of the file system
+	// the default sync folder is ./sync_folder so all paths are relative to this folder
+	// this makes a request for /test go to ./sync_folder/test
+	// the command thread should then report all files/subdirectories in the requested directory
+
+
+	// first we need to init the internal file system structure
+	// whether or not this needs custom classes I don't know atm
+	// I will first try without
+	// later with inotify this thread should also watch for any file changes
+	// the internal representation works like this:
+	// every leaf node is assigned a hash of its contents. in the case of an empty directory
+	// this should be some fixed value like 0. Then the hash for a directory is the hash of
+	// the hashes of all its contents. The hashes are concatenated sorted by file names (like ls)
+	// this gives something similar to a merkle tree. With this it is easy to check whether there are
+	// differences in the directories
+	// for example:
+	// a newly connected client can just ask for the hash of the root directory. If this is the same
+	// as he already has, he does not have to make any more requests because he knows that he is in sync
+
+
 	while(!getShutdown()) {
 		sleep(1);
 	}

@@ -10,7 +10,6 @@ typedef struct ipAddressEntry {
 	struct timeval lastSeen;
 } IpAddressEntry;
 
-void createIpAddressList(IpAddressEntry** list);
 void freeIpAddressList(IpAddressEntry** list);
 void addOrUpdateEntry(IpAddressEntry** list, struct sockaddr* ipAddress, struct timeval lastSeen);
 // passing the ip address by ** is not really necessary for printIpAddressList but it is more

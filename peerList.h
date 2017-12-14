@@ -1,6 +1,9 @@
 #ifndef PEER_LIST_H
 #define PEER_LIST_H
 
+#include <sys/time.h>
+#include <sys/socket.h>
+
 // there will be a single synchronized peer list
 // so here need to be mutexes as well
 // this list has to do a lot of work
@@ -28,8 +31,11 @@ void destroyPeerListLock();
 // peers should be uniquely identified by their ip address
 // so the functions only take an ip address as parameter
 
-void appendPeer(unsigned char ipVersion, const char* ipAddress);
-void removePeer(unsigned char ipVersion, const char* ipAddress);
+void appendPeer(char id[6]);
+
+// addIpToPeer should automatically append the peer if it is not in the list
+void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen);
+void removePeer(char id[6]);
 void printPeerList();
 void freePeerList();
 

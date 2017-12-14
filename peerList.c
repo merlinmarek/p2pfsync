@@ -7,6 +7,7 @@
 #include "logger.h"
 #include "peerList.h"
 #include "ipAddressList.h"
+#include "broadcast.h"
 
 typedef struct peer {
 	// link to the next peer
@@ -37,26 +38,36 @@ static Peer* peerList = NULL;
 
 // helper function
 // this function MUST NOT LOCK THE MUTEX as it is called by the other locking functions
-Peer* findPeer(unsigned char ipVersion, const char* ipAddress) {
+Peer* findPeer(char id[6]) {
 	Peer* peerIterator = NULL;
 	for(peerIterator = peerList; peerIterator != NULL; peerIterator = peerIterator->nextPeer) {
-		/*if(peerIterator->ipVersion == ipVersion && memcmp(peerIterator->ipv4address, ipAddress, ipVersion == 4 ? 4 : 16) == 0) {
+		if(memcmp(peerIterator->id, id, 6) == 0) {
 			break;
 		}
-		*/
 	}
 	return peerIterator;
 }
 
-void appendPeer(unsigned char ipVersion, const char* ipAddress) {
+void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen) {
+	Peer* peer = findPeer(id);
+	if(peer == NULL) {
+		logger("addIpToPeer peer not in list\n");
+		appendPeer(id);
+		peer = findPeer(id);
+	}
+	// the peer is valid
+	addOrUpdateEntry(&peer->ipAddress, ipAddress, lastSeen);
+}
+
+void appendPeer(char id[6]) {
 	pthread_mutex_lock(&peerListLock);
-	if(findPeer(ipVersion, ipAddress) != NULL) {
+	if(findPeer(id) != NULL) {
 		logger("peer already in list\n");
 		goto end;
 	}
 	Peer* peer = (Peer*)malloc(sizeof(Peer));
 	memset(peer, 0, sizeof(Peer));
-	//peer->ipVersion = ipVersion;
+	memcpy(&peer->id, id, 6);
 	if(peerList == NULL) {
 		// the list is empty
 		peerList = peer;
@@ -69,13 +80,13 @@ end: // this uses gotos so that the mutex guards can always be at the start an e
 	pthread_mutex_unlock(&peerListLock);
 }
 
-void removePeer(unsigned char ipVersion, const char* ipAddress) {
+void removePeer(char id[6]) {
 	pthread_mutex_lock(&peerListLock);
 	if(peerList == NULL) {
 		// we cannot remove something from an empty list
 		goto end;
 	}
-	Peer* peer = findPeer(ipVersion, ipAddress);
+	Peer* peer = findPeer(id);
 	if(peer == NULL) {
 		logger("cannot remove peer, not in list\n");
 		goto end;
@@ -101,7 +112,10 @@ void printPeerList() {
 	pthread_mutex_lock(&peerListLock);
 	Peer* peerIterator;
 	for(peerIterator = peerList; peerIterator != NULL; peerIterator = peerIterator->nextPeer) {
-		//logger("peer: %s\n", peerIterator->ipv4address);
+		logger("[");
+		printSenderId(peerIterator->id);
+		logger("]\n");
+		printIpAddressList(&peerIterator->ipAddress);
 	}
 	pthread_mutex_unlock(&peerListLock);
 }

@@ -24,36 +24,6 @@ void printSenderId(char buffer[6]) {
 			(unsigned char)buffer[5]);
 }
 
-void printIpAddressFormatted(struct sockaddr* address) {
-	char ipBuffer[256];
-	memset(ipBuffer, 0, sizeof(ipBuffer));
-	if(address->sa_family == AF_INET) {
-		// ipv4 address
-		logger("IPv4 ");
-		struct sockaddr_in* ipv4Address = (struct sockaddr_in*)address;
-		inet_ntop(address->sa_family, &(ipv4Address->sin_addr), ipBuffer, sizeof(ipBuffer));
-	} else if(address->sa_family == AF_INET6) {
-		if(isIpv4Mapped(address)) {
-			// this is an ipv6 mapped ipv4 address
-			// the ipv4 address is stored in the last 4 bytes of the 16 byte ipv6 address
-			logger("IPv4 ");
-			struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
-			char* ipv4AddressStart = ((char*)(&ipv6Address->sin6_addr.__in6_u)) + 12;
-			struct in_addr* ipv4InAddr = (struct in_addr*)ipv4AddressStart;
-			inet_ntop(AF_INET, ipv4InAddr, ipBuffer, sizeof(ipBuffer));
-		} else {
-			// regular ipv6 address
-			logger("IPv6 ");
-			struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
-			inet_ntop(AF_INET6, &(ipv6Address->sin6_addr), ipBuffer, sizeof(ipBuffer));
-		}
-
-	} else {
-		logger("unkown address family %d", address->sa_family);
-		return;
-	}
-	logger("%s", ipBuffer);
-}
 
 void getOwnId(char buffer[6]) {
 	struct ifaddrs* interfaceList;
