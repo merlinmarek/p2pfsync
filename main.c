@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <ifaddrs.h>
+#include <sys/stat.h>
 #include <sys/select.h>
 #include <signal.h>
 #include <sys/time.h>
@@ -23,6 +24,7 @@
 #include "broadcast.h"
 #include "socketUtil.h"
 #include "peerList.h"
+#include "md5.h"
 
 
 // the packets need to carry an id as well so we can match ipv4 and ipv6 endpoints as well
@@ -113,7 +115,6 @@ void* broadcastThread(void* tid) {
 	    char receiveBuffer[128];
 	    struct sockaddr_storage otherAddress;
 	    socklen_t otherLength = sizeof(otherAddress);
-
 	    int receivedBytes = recvfrom(broadcastListener, receiveBuffer, sizeof(receiveBuffer)-1, 0, (struct sockaddr*)&otherAddress, &otherLength);
 
 	    // TEST BROADCASTING WITH socat - udp-datagram:134.130.223.255:44700,broadcast
@@ -139,25 +140,43 @@ void* broadcastThread(void* tid) {
             switch(packet->messageType) {
             case MESSAGE_TYPE_DISCOVER:
             	// we want to respond to a discovery request
-            	/*logger("["); printSenderId(packet->senderId); logger("]");
+            	logger("["); printSenderId(packet->senderId); logger("]");
             	logger("[DISCOVERY]");
             	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
             	logger("\n");
-            	*/
+
             	sendAvailablePacket((struct sockaddr*)&otherAddress, ownId);
             	break;
             case MESSAGE_TYPE_AVAILABLE:
-            	/*logger("["); printSenderId(packet->senderId); logger("]");
+            	logger("["); printSenderId(packet->senderId); logger("]");
             	logger("[AVAILABLE]");
             	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
             	logger("\n");
-            	*/
+
 
             	// we have seen the peer just now
             	logger("");
             	struct timeval lastSeen;
             	gettimeofday(&lastSeen, NULL);
             	addIpToPeer(packet->senderId, (struct sockaddr*)&otherAddress, lastSeen);
+
+            	// send our id :)
+            	/*int commandfd = socket(otherAddress.ss_family, SOCK_STREAM, 0);
+            	// first we need to set the port
+            	if(otherAddress.ss_family == AF_INET) {
+            		// ipv4
+            		struct sockaddr_in* ipv4Address = (struct sockaddr_in*)&otherAddress;
+            		ipv4Address->sin_port = htons(COMMAND_LISTENER_PORT);
+            	} else {
+            		// ipv6
+            		struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)&otherAddress;
+            		ipv6Address->sin6_port = htons(COMMAND_LISTENER_PORT);
+            	}
+            	connect(commandfd, (struct sockaddr*)&otherAddress, otherLength);
+            	const char* schniedel = "schniedel";
+            	send(commandfd, schniedel, 6, 0);
+            	close(commandfd);
+            	*/
 
             	break;
             default:
@@ -199,8 +218,47 @@ void* commandThread(void* tid) {
 	// a newly connected client can just ask for the hash of the root directory. If this is the same
 	// as he already has, he does not have to make any more requests because he knows that he is in sync
 
+	// this is all to much for tonight so we go for enumeration of a requested directory only FOR NOW
+	// a peer that has discovered us can establish a command connection to us and then send a
+	// GET / request to us
+	// GET <directory>
+	// we look up ./sync_folder/<directory> and return the list of files/directories in this folder
+	// for hashing we will use md5
+
+	/*int listenerSocket = createTCPListener(COMMAND_LISTENER_PORT_STRING);
+
+	fd_set master_fds;
+	FD_ZERO(&master_fds);
+	FD_SET(listenerSocket, &master_fds);
+
+	int maxfd = listenerSocket;
+	*/
 
 	while(!getShutdown()) {
+	    /*fd_set read_fds = master_fds;
+	    struct timeval timeout;
+	    memset(&timeout, 0, sizeof(timeout));
+	    timeout.tv_sec = 1; // block at maximum one second at a time
+	    int success = select(maxfd + 1, &read_fds, NULL, NULL, &timeout);
+	    if(success == -1) {
+	    	logger("select: %s\n", strerror(errno));
+	    	continue;
+	    }
+	    if(success == 0) {
+	    	// timed out
+	    	continue;
+	    }
+	    // if we reach this point we can accept an incoming connection
+	    char receiveBuffer[128];
+	    struct sockaddr_storage otherAddress;
+	    socklen_t otherLength = sizeof(otherAddress);
+
+	    int remotefd = accept(listenerSocket, (struct sockaddr*)&otherAddress, &otherLength);
+	    int receivedBytes = recv(remotefd, receiveBuffer, sizeof(receiveBuffer), 0);
+	    logger("got message from: %.6s\n", receiveBuffer);
+	    close(remotefd);
+		sleep(1);
+		*/
 		sleep(1);
 	}
 	logger("commandThread ended\n");
@@ -216,8 +274,45 @@ void* fileTransferThread(void* tid) {
 	return NULL;
 }
 
+void fileMD5(unsigned char result[16], const char* filePath) {
+	// testing md5 here
+	MD5_CTX md5hash;
+	MD5_Init(&md5hash);
+
+	// this assumes that the file is small enough to fit entirely in ram
+	struct stat st;
+	if(stat(filePath, &st) != 0) {
+		// the file does not exist
+		logger("file %s does not exist\n", filePath);
+		return;
+	}
+	char* buffer = (char*)malloc(st.st_size);
+	int filefd = open(filePath, O_RDONLY);
+	if(filefd == -1) {
+		logger("error opening file\n");
+	}
+	read(filefd, buffer, st.st_size);
+	MD5_Update(&md5hash, (void*)buffer, st.st_size);
+	MD5_Final(result, &md5hash);
+	free(buffer);
+}
+
 
 int main() {
+	/*unsigned char result[16];
+	memset(result, 0, 16);
+
+	fileMD5(result, "./main.c");
+
+	printf("hash is: ");
+	int i;
+	for(i = 0; i < 16; i++) {
+		printf("%02x", result[i]);
+	}
+	printf("\n");
+	return 0;
+	*/
+
 	/*
 	 * 1. open a broadcast listener so we can respond to other peers
 	 * 2. get broadcast ips from all interfaces and send broadcast packet

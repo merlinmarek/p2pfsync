@@ -28,11 +28,6 @@
 void initializePeerListLock();
 void destroyPeerListLock();
 
-// peers should be uniquely identified by their ip address
-// so the functions only take an ip address as parameter
-
-void appendPeer(char id[6]);
-
 // addIpToPeer should automatically append the peer if it is not in the list
 void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen);
 void removePeer(char id[6]);

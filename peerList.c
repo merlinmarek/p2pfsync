@@ -9,6 +9,8 @@
 #include "ipAddressList.h"
 #include "broadcast.h"
 
+void appendPeer(char id[6]);
+
 typedef struct peer {
 	// link to the next peer
 	struct peer* nextPeer;
@@ -61,11 +63,11 @@ void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen
 	pthread_mutex_unlock(&peerListLock);
 }
 
+// internal helper function! MUST NOT LOCK MUTEX
 void appendPeer(char id[6]) {
-	pthread_mutex_lock(&peerListLock);
 	if(findPeer(id) != NULL) {
 		logger("peer already in list\n");
-		goto end;
+		return;
 	}
 	Peer* peer = (Peer*)malloc(sizeof(Peer));
 	memset(peer, 0, sizeof(Peer));
@@ -73,13 +75,11 @@ void appendPeer(char id[6]) {
 	if(peerList == NULL) {
 		// the list is empty
 		peerList = peer;
-		goto end;
+		return;
 	}
 	Peer* peerIterator;
 	for(peerIterator = peerList; peerIterator->nextPeer != NULL; peerIterator = peerIterator->nextPeer);
 	peerIterator->nextPeer = peer;
-end: // this uses gotos so that the mutex guards can always be at the start an end of a function
-	pthread_mutex_unlock(&peerListLock);
 }
 
 void removePeer(char id[6]) {
