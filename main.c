@@ -25,9 +25,29 @@
 #include "peerList.h"
 
 
+// the packets need to carry an id as well so we can match ipv4 and ipv6 endpoints as well
+// as multiple connection path to some peer
+// stackoverflow proposed the mac address of any device that it connected to the network
+// so we will use the mac of the first device that has a valid ipv4/ipv6 address and is not the
+// loopback device!
+
 void sigintHandler(int unused) {
 	logger("\nreceived SIGINT, shutting down...\n");
 	setShutdown(1);
+}
+
+// gives the difference t1 - t2 in milliseconds
+double getTimeDifferenceMs(struct timeval t1, struct timeval t2) {
+    double elapsedTime = (t1.tv_sec - t2.tv_sec) * 1000.0; // sec to ms
+    elapsedTime += (t1.tv_usec - t2.tv_usec) / 1000.0;		// us to ms
+    return elapsedTime;
+}
+
+// gives the difference now - t
+double getPassedTime(struct timeval t) {
+	struct timeval now;
+	gettimeofday(&now, 0);
+	return getTimeDifferenceMs(now, t);
 }
 
 // the broadcasting thread is responsible for continously discovering
@@ -40,10 +60,20 @@ void* broadcastThread(void* tid) {
 	logger("broadcastThread started\n");
 
 	int broadcastListener = createBroadcastListener();
-	logger("listening to broadcast @ %d\n", broadcastListener);
-	//sendBroadcastDiscover(); // initial discovery
-	sendIpv6Multicast();
-	sendIpv4Broadcasts();
+
+	// we also need our id so other clients can match ip addresses
+	char ownId[6];
+	getOwnId(ownId);
+
+	logger("own id is: %02x%02x%02x%02x%02x%02x\n",
+			(unsigned char)ownId[0],
+			(unsigned char)ownId[1],
+			(unsigned char)ownId[2],
+			(unsigned char)ownId[3],
+			(unsigned char)ownId[4],
+			(unsigned char)ownId[5]);
+
+	// initialize timer here so the first broadcast is done after the first timeout
 	struct timeval lastBroadcastDiscovery;
 	gettimeofday(&lastBroadcastDiscovery, NULL);
 
@@ -51,20 +81,18 @@ void* broadcastThread(void* tid) {
 	FD_ZERO(&master_fds);
 	FD_SET(broadcastListener, &master_fds);
 
-	while(!getShutdown()) {
-		// check if we need to do another broadcast
-		/*struct timeval now;
-		gettimeofday(&now, NULL);
-		double elapsedTime = (now.tv_sec - lastBroadcastDiscovery.tv_sec) * 1000.0; // sec to ms
-		elapsedTime += (now.tv_usec - lastBroadcastDiscovery.tv_usec) / 1000.0;		// us to ms
+	logger("listening to broadcast @ %d\n", broadcastListener);
 
-		//logger("it has been %d seconds since last broadcast\n", (int)(elapsedTime / 1000.0));
-		if(elapsedTime >= 10000.0) {
-			logger("rebroadcasting after %d ms\n", (int)elapsedTime);
-			gettimeofday(&lastBroadcastDiscovery, NULL);
-			sendBroadcastDiscover();
+	while(!getShutdown()) {
+		if(getPassedTime(lastBroadcastDiscovery) > 10000.0) {
+			// we want to rebroadcast after 5 seconds are over
+			// this should probably be random so the chance for collisions is low?!
+			// should this be something I need to think about with a layer 4 protocol like udp
+			// or is this automagically done by the lower layers?
+			gettimeofday(&lastBroadcastDiscovery, NULL); // reset the timer
+            sendIpv6Multicast(ownId);
+            sendIpv4Broadcasts(ownId);
 		}
-		*/
 
 	    fd_set read_fds = master_fds;
 	    struct timeval timeout;
@@ -99,22 +127,28 @@ void* broadcastThread(void* tid) {
 
 	    Packet* packet = (Packet*)receiveBuffer;
 	    if(receivedBytes == sizeof(Packet) && isPacketValid(packet)) {
-            if(isOwnAddress((struct sockaddr*)&otherAddress)) {
-                // we do not want to deal with our own messages
-                continue;
-            }
+	    	if(memcmp(packet->senderId, ownId, 6) == 0) {
+	    		// we do not want to deal with our own messages
+	    		continue;
+	    	}
 
             // when we reach this point this is a valid message from some other peer
             // check whether this is a discover request or an available message
             switch(packet->messageType) {
             case MESSAGE_TYPE_DISCOVER:
             	// we want to respond to a discovery request
-            	logger("got discover packet from "); printIpAddress((struct sockaddr*)&otherAddress); logger("\n");
-            	sendAvailablePacket((struct sockaddr*)&otherAddress);
+            	logger("["); printSenderId(packet->senderId); logger("]");
+            	logger("[DISCOVERY]");
+            	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
+            	logger("\n");
+            	sendAvailablePacket((struct sockaddr*)&otherAddress, ownId);
             	break;
             case MESSAGE_TYPE_AVAILABLE:
             	// when someone responded to our discovery request we should store their online status somewhere !!
-            	logger("received available packet from: "); printIpAddress((struct sockaddr*)&otherAddress); logger("\n");
+            	logger("["); printSenderId(packet->senderId); logger("]");
+            	logger("[AVAILABLE]");
+            	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
+            	logger("\n");
             	break;
             default:
             	// this should never happen
@@ -122,7 +156,7 @@ void* broadcastThread(void* tid) {
             }
 	    } else {
 	    	// either we did receive a wrong amount of bytes or printPacket failed (success == 0)
-	    	logger("received %d bytes: %s\n", receivedBytes, receiveBuffer);
+	    	logger("received %d bytes: %*.*s\n", receivedBytes, 0, receivedBytes, receiveBuffer);
 	    }
 	}
 
@@ -197,7 +231,7 @@ int main() {
 	pthread_join(commandThreadId, NULL);
 	pthread_join(fileTransferThreadId, NULL);
 
-	logger("finally fuckers are down\n");
+	logger("threads are down\n");
 	// cleanup
 	freePeerList();
 

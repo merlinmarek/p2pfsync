@@ -6,13 +6,94 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <stdlib.h>
+#include <time.h>
+#include <linux/if_packet.h>
 
 #include "defines.h"
 #include "logger.h"
 #include "broadcast.h"
 
+void printSenderId(char buffer[6]) {
+	logger("%02x%02x%02x%02x%02x%02x",
+			(unsigned char)buffer[0],
+			(unsigned char)buffer[1],
+			(unsigned char)buffer[2],
+			(unsigned char)buffer[3],
+			(unsigned char)buffer[4],
+			(unsigned char)buffer[5]);
+}
+
+void printIpAddressFormatted(struct sockaddr* address) {
+	char ipBuffer[256];
+	memset(ipBuffer, 0, sizeof(ipBuffer));
+	if(address->sa_family == AF_INET) {
+		// ipv4 address
+		logger("IPv4 ");
+		struct sockaddr_in* ipv4Address = (struct sockaddr_in*)address;
+		inet_ntop(address->sa_family, &(ipv4Address->sin_addr), ipBuffer, sizeof(ipBuffer));
+	} else if(address->sa_family == AF_INET6) {
+		if(isIpv4Mapped(address)) {
+			// this is an ipv6 mapped ipv4 address
+			// the ipv4 address is stored in the last 4 bytes of the 16 byte ipv6 address
+			logger("IPv4 ");
+			struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
+			char* ipv4AddressStart = ((char*)(&ipv6Address->sin6_addr.__in6_u)) + 12;
+			struct in_addr* ipv4InAddr = (struct in_addr*)ipv4AddressStart;
+			inet_ntop(AF_INET, ipv4InAddr, ipBuffer, sizeof(ipBuffer));
+		} else {
+			// regular ipv6 address
+			logger("IPv6 ");
+			struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
+			inet_ntop(AF_INET6, &(ipv6Address->sin6_addr), ipBuffer, sizeof(ipBuffer));
+		}
+
+	} else {
+		logger("unkown address family %d", address->sa_family);
+		return;
+	}
+	logger("%s", ipBuffer);
+}
+
+void getOwnId(char buffer[6]) {
+	struct ifaddrs* interfaceList;
+	int success;
+	if((success = getifaddrs(&interfaceList)) != 0) {
+		logger("getifaddrs: %s\n", gai_strerror(success));
+		return;
+	}
+
+	int idSet = 0;
+
+	// now we can iterate over the interfaces
+	struct ifaddrs* interface;
+	for(interface = interfaceList; interface != NULL; interface = interface->ifa_next) {
+		if(interface->ifa_addr->sa_family == AF_PACKET && strcmp(interface->ifa_name, "lo") != 0) {
+			// mac address is in AF_PACKET interfaces
+			// we also need to skip the loopback device because its mac is always just zeros
+			struct sockaddr_ll* address = (struct sockaddr_ll*)interface->ifa_addr;
+			memcpy(buffer, address->sll_addr, 6);
+			idSet = 1;
+			logger("getOwnId id generation succeded from interface: %s\n", interface->ifa_name);
+			break;
+		}
+	}
+	freeifaddrs(interfaceList);
+
+	if(idSet == 0) {
+		logger("getOwnId id generation failed, trying random number\n");
+		// somehow the id generation failed :/ so we generate a random number instead
+		// we need to seed the random generator here so not everyone generates the same
+		srand(time(0));
+		int i;
+		for(i = 0; i < 6; ++i) {
+			buffer[i] = rand() & 0xFF;
+		}
+	}
+}
+
 // the broadcast has to be sent for every device
-void sendIpv4Broadcasts() {
+void sendIpv4Broadcasts(char senderId[6]) {
 	int broadcastSocket = socket(AF_INET6, SOCK_DGRAM, 0);
 	if(broadcastSocket == -1) {
 		logger("socket %s\n", strerror(errno));
@@ -29,7 +110,7 @@ void sendIpv4Broadcasts() {
 		return;
 	}
 
-	// now we can iterate over the devices
+	// now we can iterate over the interfaces
 	struct ifaddrs* interface;
 	for(interface = interfaceList; interface != NULL; interface = interface->ifa_next) {
 		if(interface->ifa_addr == NULL || interface->ifa_addr->sa_family != AF_INET) {
@@ -45,8 +126,9 @@ void sendIpv4Broadcasts() {
         ipv4Address.sin_port = htons(BROADCAST_LISTENER_PORT);
 
         Packet packet;
-        memcpy(packet.identifier, "P2PFSYNC", 8);
+        memcpy(packet.protocolId, "P2PFSYNC", 8);
         packet.messageType = MESSAGE_TYPE_DISCOVER;
+        memcpy(packet.senderId, senderId, 6);
         if(sendto(broadcastSocket, &packet, sizeof(packet), 0, (struct sockaddr*)&ipv4Address, sizeof(ipv4Address)) == -1) {
             logger("sendto: %s\n", strerror(errno));
         }
@@ -59,15 +141,13 @@ void sendIpv4Broadcasts() {
 // for ipv4 it is easy as every interface has a different
 // ipv4 broadcast address. The multicast address for ipv6
 // is unique as far as i know
-void sendIpv6Multicast() {
+// there are actually ways to set the interface for sending
+// ipv6 multicasts but it is not trivial. Idk if it is even possible
+// without root priviliges so we will stick with a single multicast here
+void sendIpv6Multicast(char senderId[6]) {
 	int multicastSocket = socket(AF_INET6, SOCK_DGRAM, 0);
 	if(multicastSocket == -1) {
 		logger("socket %s\n", strerror(errno));
-	}
-
-	// do i even need this?
-	if(setsockopt(multicastSocket, SOL_SOCKET, SO_BROADCAST, &(int){1}, sizeof(int)) < 0) {
-		logger("setsockopt: %s\n", strerror(errno));
 	}
 
 	struct sockaddr_in6 ipv6Address;
@@ -77,8 +157,9 @@ void sendIpv6Multicast() {
 	inet_pton(AF_INET6, IPV6_MULTICAST_ADDRESS, &ipv6Address.sin6_addr);
 
 	Packet packet;
-    memcpy(packet.identifier, "P2PFSYNC", 8);
+    memcpy(packet.protocolId, "P2PFSYNC", 8);
 	packet.messageType = MESSAGE_TYPE_DISCOVER;
+	memcpy(packet.senderId, senderId, 6);
 	if(sendto(multicastSocket, &packet, sizeof(packet), 0, (struct sockaddr*)&ipv6Address, sizeof(ipv6Address)) == -1) {
 		logger("sendto: %s\n", strerror(errno));
 	}
@@ -104,11 +185,12 @@ int isIpv4Mapped(struct sockaddr* address) {
 	return 0;
 }
 
-int sendAvailablePacket(struct sockaddr* destinationAddress) {
+int sendAvailablePacket(struct sockaddr* destinationAddress, char senderId[6]) {
 	Packet packet;
 	memset(&packet, 0, sizeof(Packet));
-	memcpy(packet.identifier, "P2PFSYNC", 8);
+	memcpy(packet.protocolId, "P2PFSYNC", 8);
 	packet.messageType = MESSAGE_TYPE_AVAILABLE;
+	memcpy(packet.senderId, senderId, 6);
 
 	int senderSocket = socket(destinationAddress->sa_family, SOCK_DGRAM, 0);
 	if(senderSocket == -1) {
@@ -168,7 +250,7 @@ int isOwnAddress(struct sockaddr* address) {
 }
 
 int isPacketValid(Packet* packet) {
-	if(memcmp(packet->identifier, "P2PFSYNC", 8) != 0) {
+	if(memcmp(packet->protocolId, "P2PFSYNC", 8) != 0) {
 		return 0;
 	}
 	switch((unsigned int)(packet->messageType)) {

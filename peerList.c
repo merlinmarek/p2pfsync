@@ -6,14 +6,17 @@
 #include "defines.h"
 #include "logger.h"
 #include "peerList.h"
+#include "ipAddressList.h"
 
 typedef struct peer {
+	// link to the next peer
 	struct peer* nextPeer;
-	unsigned char ipVersion; // has to be one of { IPV4, IPV6 }
-	union {
-        char ipv4address[4];
-        char ipv6address[16];
-	};
+
+	// id of the peer
+	char id[6];
+
+	// a list of ip addresses
+	struct ipAddressEntry* ipAddress;
 } Peer;
 
 static pthread_mutex_t peerListLock;
@@ -37,9 +40,10 @@ static Peer* peerList = NULL;
 Peer* findPeer(unsigned char ipVersion, const char* ipAddress) {
 	Peer* peerIterator = NULL;
 	for(peerIterator = peerList; peerIterator != NULL; peerIterator = peerIterator->nextPeer) {
-		if(peerIterator->ipVersion == ipVersion && memcmp(peerIterator->ipv4address, ipAddress, ipVersion == 4 ? 4 : 16) == 0) {
+		/*if(peerIterator->ipVersion == ipVersion && memcmp(peerIterator->ipv4address, ipAddress, ipVersion == 4 ? 4 : 16) == 0) {
 			break;
 		}
+		*/
 	}
 	return peerIterator;
 }
@@ -52,7 +56,7 @@ void appendPeer(unsigned char ipVersion, const char* ipAddress) {
 	}
 	Peer* peer = (Peer*)malloc(sizeof(Peer));
 	memset(peer, 0, sizeof(Peer));
-	peer->ipVersion = ipVersion;
+	//peer->ipVersion = ipVersion;
 	if(peerList == NULL) {
 		// the list is empty
 		peerList = peer;
@@ -97,7 +101,7 @@ void printPeerList() {
 	pthread_mutex_lock(&peerListLock);
 	Peer* peerIterator;
 	for(peerIterator = peerList; peerIterator != NULL; peerIterator = peerIterator->nextPeer) {
-		logger("peer: %s\n", peerIterator->ipv4address);
+		//logger("peer: %s\n", peerIterator->ipv4address);
 	}
 	pthread_mutex_unlock(&peerListLock);
 }
