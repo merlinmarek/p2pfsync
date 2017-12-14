@@ -140,18 +140,21 @@ void* broadcastThread(void* tid) {
             switch(packet->messageType) {
             case MESSAGE_TYPE_DISCOVER:
             	// we want to respond to a discovery request
-            	logger("["); printSenderId(packet->senderId); logger("]");
+            	/*logger("["); printSenderId(packet->senderId); logger("]");
             	logger("[DISCOVERY]");
             	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
             	logger("\n");
+            	*/
 
             	sendAvailablePacket((struct sockaddr*)&otherAddress, ownId);
             	break;
             case MESSAGE_TYPE_AVAILABLE:
+            	/*
             	logger("["); printSenderId(packet->senderId); logger("]");
             	logger("[AVAILABLE]");
             	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
             	logger("\n");
+            	*/
 
 
             	// we have seen the peer just now
@@ -160,8 +163,12 @@ void* broadcastThread(void* tid) {
             	gettimeofday(&lastSeen, NULL);
             	addIpToPeer(packet->senderId, (struct sockaddr*)&otherAddress, lastSeen);
 
+            	/*
+            	 * THIS DOES NOT BELONG HERE! WE NEED TO SOMEHOW SIGNAL TO THE COMMAND THREAD
+            	 * THAT THERE IS A NEW CLIENT
             	// send our id :)
-            	/*int commandfd = socket(otherAddress.ss_family, SOCK_STREAM, 0);
+            	logger("trying to send\n");
+            	int commandfd = socket(otherAddress.ss_family, SOCK_STREAM, 0);
             	// first we need to set the port
             	if(otherAddress.ss_family == AF_INET) {
             		// ipv4
@@ -172,11 +179,17 @@ void* broadcastThread(void* tid) {
             		struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)&otherAddress;
             		ipv6Address->sin6_port = htons(COMMAND_LISTENER_PORT);
             	}
-            	connect(commandfd, (struct sockaddr*)&otherAddress, otherLength);
-            	const char* schniedel = "schniedel";
-            	send(commandfd, schniedel, 6, 0);
+            	if(connect(commandfd, (struct sockaddr*)&otherAddress, otherLength) != 0) {
+            		logger("connect %s\n", strerror(errno));
+            	}
+            	if(send(commandfd, asdf, 6, 0) < 0) {
+            		logger("send %s\n", strerror(errno));
+            	}
+
             	close(commandfd);
+            	logger("closed\n");
             	*/
+
 
             	break;
             default:
@@ -225,17 +238,19 @@ void* commandThread(void* tid) {
 	// we look up ./sync_folder/<directory> and return the list of files/directories in this folder
 	// for hashing we will use md5
 
-	/*int listenerSocket = createTCPListener(COMMAND_LISTENER_PORT_STRING);
+	int listenerSocket = createTCPListener(COMMAND_LISTENER_PORT_STRING);
+	if(listen(listenerSocket, 10) != 0) {
+		logger("listen %s\n", strerror(errno));
+	}
 
 	fd_set master_fds;
 	FD_ZERO(&master_fds);
 	FD_SET(listenerSocket, &master_fds);
 
 	int maxfd = listenerSocket;
-	*/
 
 	while(!getShutdown()) {
-	    /*fd_set read_fds = master_fds;
+	    fd_set read_fds = master_fds;
 	    struct timeval timeout;
 	    memset(&timeout, 0, sizeof(timeout));
 	    timeout.tv_sec = 1; // block at maximum one second at a time
@@ -257,8 +272,6 @@ void* commandThread(void* tid) {
 	    int receivedBytes = recv(remotefd, receiveBuffer, sizeof(receiveBuffer), 0);
 	    logger("got message from: %.6s\n", receiveBuffer);
 	    close(remotefd);
-		sleep(1);
-		*/
 		sleep(1);
 	}
 	logger("commandThread ended\n");

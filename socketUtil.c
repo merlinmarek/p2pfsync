@@ -59,7 +59,7 @@ int createListenerSocket(const char* port, int ai_socktype) {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_socktype = ai_socktype;
 	hints.ai_flags = AI_PASSIVE;
 	struct addrinfo* resultList;
 	int success = getaddrinfo(NULL, port, &hints, &resultList);
