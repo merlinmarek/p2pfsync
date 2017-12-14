@@ -49,6 +49,7 @@ Peer* findPeer(char id[6]) {
 }
 
 void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen) {
+	pthread_mutex_lock(&peerListLock);
 	Peer* peer = findPeer(id);
 	if(peer == NULL) {
 		logger("addIpToPeer peer not in list\n");
@@ -57,6 +58,7 @@ void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen
 	}
 	// the peer is valid
 	addOrUpdateEntry(&peer->ipAddress, ipAddress, lastSeen);
+	pthread_mutex_unlock(&peerListLock);
 }
 
 void appendPeer(char id[6]) {
