@@ -6,21 +6,6 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 
-// this list needs a little more thinking than the peerList
-// because there will be more than one instance of it.
-// i am not sure if mutexes are needed. This should probably be
-// guarded by the peerlist functions. In this cases functions
-// may never return addresses of values in the list but only
-// copies. The threads should be completely shielded from this!
-// ALL FUNCTIONS MUST ONLY BE CALLED BY THE PEER LIST
-// ipAddressList.h MUST NOT BE INCLUDED IN ANY FILES EXCEPT
-// peerList.h/c
-
-// IMPORTANT
-// some functions may rely on the peers having (approximately)
-// the same clock time. This is especially important for file
-// changed times. atm I dont know how to work around that...
-
 // internal helper function
 IpAddressEntry* findEntry(IpAddressEntry** list, struct sockaddr* ipAddress) {
 	IpAddressEntry* ipAddressIterator;
@@ -56,7 +41,6 @@ void freeIpAddressList(IpAddressEntry** list) {
 }
 
 void addOrUpdateEntry(IpAddressEntry** list, struct sockaddr* ipAddress, struct timeval lastSeen) {
-	//logger("addorupdate with ip: "); printIpAddress(ipAddress); logger("\n");
 	if(*list == NULL) {
 		// this is the first element
 		IpAddressEntry* newEntry = (IpAddressEntry*)malloc(sizeof(IpAddressEntry));

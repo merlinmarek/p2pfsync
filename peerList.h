@@ -34,4 +34,7 @@ void removePeer(char id[6]);
 void printPeerList();
 void freePeerList();
 
+// there should be a function here for the command thread to obtain a copy of the list
+// or at least some ip addresses
+
 #endif

@@ -17,6 +17,8 @@
 #include <sys/select.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <dirent.h>
+#include <limits.h>
 
 #include "defines.h"
 #include "logger.h"
@@ -25,7 +27,7 @@
 #include "socketUtil.h"
 #include "peerList.h"
 #include "md5.h"
-
+#include "fileHierarchy.h"
 
 // the packets need to carry an id as well so we can match ipv4 and ipv6 endpoints as well
 // as multiple connection path to some peer
@@ -87,7 +89,7 @@ void* broadcastThread(void* tid) {
 
 	while(!getShutdown()) {
 		if(getPassedTime(lastBroadcastDiscovery) > 10000.0) {
-			// we want to rebroadcast after 5 seconds are over
+			// we want to rebroadcast after 10 seconds are over
 			// this should probably be random so the chance for collisions is low?!
 			// should this be something I need to think about with a layer 4 protocol like udp
 			// or is this automagically done by the lower layers?
@@ -166,8 +168,10 @@ void* broadcastThread(void* tid) {
             	/*
             	 * THIS DOES NOT BELONG HERE! WE NEED TO SOMEHOW SIGNAL TO THE COMMAND THREAD
             	 * THAT THERE IS A NEW CLIENT
+            	 */
+
             	// send our id :)
-            	logger("trying to send\n");
+            	//logger("trying to send\n");
             	int commandfd = socket(otherAddress.ss_family, SOCK_STREAM, 0);
             	// first we need to set the port
             	if(otherAddress.ss_family == AF_INET) {
@@ -180,15 +184,25 @@ void* broadcastThread(void* tid) {
             		ipv6Address->sin6_port = htons(COMMAND_LISTENER_PORT);
             	}
             	if(connect(commandfd, (struct sockaddr*)&otherAddress, otherLength) != 0) {
-            		logger("connect %s\n", strerror(errno));
+            		//logger("connect %s\n", strerror(errno));
             	}
-            	if(send(commandfd, asdf, 6, 0) < 0) {
-            		logger("send %s\n", strerror(errno));
+            	const char* request = "GET /";
+            	if(send(commandfd, request, strlen(request), 0) < 0) {
+            		//logger("send %s\n", strerror(errno));
+            	}
+
+            	char buffer[8096];
+            	int asdf = recv(commandfd, buffer, 8096, 0);
+            	const char* delim = "<";
+            	buffer[asdf] = 0;
+            	char* entry = strtok(buffer, delim);
+            	logger("%s\n", entry);
+            	while((entry = strtok(NULL, delim)) != NULL) {
+            		logger("%s\n", entry);
             	}
 
             	close(commandfd);
-            	logger("closed\n");
-            	*/
+            	//logger("closed\n");
 
 
             	break;
@@ -231,12 +245,14 @@ void* commandThread(void* tid) {
 	// a newly connected client can just ask for the hash of the root directory. If this is the same
 	// as he already has, he does not have to make any more requests because he knows that he is in sync
 
+	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	// this is all to much for tonight so we go for enumeration of a requested directory only FOR NOW
 	// a peer that has discovered us can establish a command connection to us and then send a
 	// GET / request to us
 	// GET <directory>
 	// we look up ./sync_folder/<directory> and return the list of files/directories in this folder
 	// for hashing we will use md5
+	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 	int listenerSocket = createTCPListener(COMMAND_LISTENER_PORT_STRING);
 	if(listen(listenerSocket, 10) != 0) {
@@ -263,16 +279,108 @@ void* commandThread(void* tid) {
 	    	// timed out
 	    	continue;
 	    }
-	    // if we reach this point we can accept an incoming connection
-	    char receiveBuffer[128];
-	    struct sockaddr_storage otherAddress;
-	    socklen_t otherLength = sizeof(otherAddress);
+	    // check which socket is ready
+	    int i;
+	    for(i = 0; i <= maxfd; i++) {
+	    	if(FD_ISSET(i, &read_fds)) {
+	    		// the socket is ready
+	    		if(i == listenerSocket) {
+	    			// we are ready to accept a new client
+                    struct sockaddr_storage otherAddress;
+                    socklen_t otherLength = sizeof(otherAddress);
 
-	    int remotefd = accept(listenerSocket, (struct sockaddr*)&otherAddress, &otherLength);
-	    int receivedBytes = recv(remotefd, receiveBuffer, sizeof(receiveBuffer), 0);
-	    logger("got message from: %.6s\n", receiveBuffer);
-	    close(remotefd);
+                    int remotefd = accept(listenerSocket, (struct sockaddr*)&otherAddress, &otherLength);
+                    // we should probably chech if this client is already in the peer list
+                    // if he is not we should insert him there because we he must be a peer
+                    if(remotefd == -1) {
+                    	// accept failed
+                    	logger("accept %s\n", strerror(errno));
+                    	continue;
+                    }
+                    FD_SET(remotefd, &master_fds);
+                    if(remotefd > maxfd) {
+                    	// keep track of the maximum socket number
+                    	maxfd = remotefd;
+                    }
+	    		} else {
+	    			// this is a regular client socket that either closed the connection or wants something from us
+                    char receiveBuffer[128];
+                    int receivedBytes = recv(i, receiveBuffer, sizeof(receiveBuffer), 0);
+                    if(receivedBytes == -1) {
+                    	// error on recv
+                    	// if this happens we want to close this socket and remove it from the master_fds
+                    	logger("recv %s\n", strerror(errno));
+                    	FD_CLR(i, &master_fds);
+                    	continue;
+                    }
+                    if(receivedBytes == 0) {
+                    	// connection closed by remote
+                    	FD_CLR(i, &master_fds);
+                    	continue;
+                    }
+                    if(receivedBytes < 5) {
+                    	// a request needs a GET / as minimum
+                    	continue;
+                    }
+                    receiveBuffer[receivedBytes] = ' '; // for strtok
+                    const char* delim = " ";
+                    const char* requestId = strtok(receiveBuffer, delim);
+                    const char* requestPath = strtok(NULL, delim);
+                    char* localPath = malloc(strlen(BASE_PATH) + strlen(requestPath) + 1);
+                    memcpy(localPath, BASE_PATH, strlen(BASE_PATH));
+                    strcpy(localPath + strlen(BASE_PATH), requestPath);
+                    logger("id: %s, path: %s\n", requestId, localPath);
+
+                    // now we enumerate files in the requested directory and return them as csv
+                    char reply[8096];
+                    memset(reply, 0, 8096);
+
+                    struct stat info;
+
+                    if(lstat(localPath, &info) != 0 || !S_ISDIR(info.st_mode)) {
+                    	// the directory does not exist or is not a directory
+                    	strcpy(reply, "requested invalid directory");
+                    } else {
+                    	// valid directory so list its contents
+                    	DIR* directory;
+                    	directory = opendir(localPath);
+                    	if(!directory) {
+                    		// error :/
+                    	}
+                    	int current_pos = 0;
+                    	while(1) {
+                            struct dirent* entry;
+                            entry = readdir(directory);
+                            if(!entry) {
+                            	// there are no more entrys so we break
+                            	break;
+                            }
+                            if(strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                            	// do not sent current and parent directory
+                            	continue;
+                            }
+                            memcpy(reply + current_pos, entry->d_name, strlen(entry->d_name));
+                            current_pos += strlen(entry->d_name);
+                            reply[current_pos++] = '<'; // < is delimiter
+                    	}
+                    	reply[current_pos] = 0; // end of string instead of <
+                    }
+                    send(i, reply, strlen(reply), 0);
+
+                    free(localPath);
+	    		}
+	    	}
+	    }
+	    // if we reach this point we can accept an incoming connection
 		sleep(1);
+	}
+	// when we are done, we want to close all still open connections
+	int sock;
+	for(sock = 0; sock < maxfd; sock++) {
+		if(FD_ISSET(sock, &master_fds)) {
+			close(sock);
+
+		}
 	}
 	logger("commandThread ended\n");
 	return NULL;
@@ -287,31 +395,9 @@ void* fileTransferThread(void* tid) {
 	return NULL;
 }
 
-void fileMD5(unsigned char result[16], const char* filePath) {
-	// testing md5 here
-	MD5_CTX md5hash;
-	MD5_Init(&md5hash);
-
-	// this assumes that the file is small enough to fit entirely in ram
-	struct stat st;
-	if(stat(filePath, &st) != 0) {
-		// the file does not exist
-		logger("file %s does not exist\n", filePath);
-		return;
-	}
-	char* buffer = (char*)malloc(st.st_size);
-	int filefd = open(filePath, O_RDONLY);
-	if(filefd == -1) {
-		logger("error opening file\n");
-	}
-	read(filefd, buffer, st.st_size);
-	MD5_Update(&md5hash, (void*)buffer, st.st_size);
-	MD5_Final(result, &md5hash);
-	free(buffer);
-}
-
 
 int main() {
+
 	/*unsigned char result[16];
 	memset(result, 0, 16);
 

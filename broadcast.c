@@ -135,26 +135,6 @@ void sendIpv6Multicast(char senderId[6]) {
 	}
 }
 
-// returns whether some ipv6 address is actually an ipv6 mapped
-// ipv4 address
-int isIpv4Mapped(struct sockaddr* address) {
-	if(address->sa_family != AF_INET6) {
-		logger("address not in ipv6 format, no mapping possible\n");
-		return 0;
-	}
-	struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
-	unsigned short* ipv6AddressWords = (unsigned short*)(&ipv6Address->sin6_addr);
-	if(ipv6AddressWords[0] == 0 &&
-		ipv6AddressWords[1] == 0 &&
-		ipv6AddressWords[2] == 0 &&
-		ipv6AddressWords[3] == 0 &&
-		ipv6AddressWords[4] == 0 &&
-		ipv6AddressWords[5] == 0xffff) {
-		return 1;
-	}
-	return 0;
-}
-
 int sendAvailablePacket(struct sockaddr* destinationAddress, char senderId[6]) {
 	Packet packet;
 	memset(&packet, 0, sizeof(Packet));
@@ -182,43 +162,6 @@ int sendAvailablePacket(struct sockaddr* destinationAddress, char senderId[6]) {
 	return 0;
 }
 
-int isOwnAddress(struct sockaddr* address) {
-	int isOwn = 0; // init with false
-	struct ifaddrs* interfaceList;
-	if(getifaddrs(&interfaceList) != 0) {
-		logger("getifaddrs");
-	}
-
-	// now we can iterate over the devices and check if any of the devices has this ip address
-	struct ifaddrs* interface;
-	for(interface = interfaceList; interface != NULL; interface = interface->ifa_next) {
-		if(interface->ifa_addr->sa_family == address->sa_family) {
-			if(interface->ifa_addr->sa_family == AF_INET) {
-				struct sockaddr_in* interfaceIpv4 = (struct sockaddr_in*)(interface->ifa_addr);
-				struct sockaddr_in* givenIpv4 = (struct sockaddr_in*)(address);
-				if(memcmp(&(interfaceIpv4->sin_addr.s_addr), &(givenIpv4->sin_addr.s_addr), 4) == 0) {
-					isOwn = 1;
-				}
-			} else if(interface->ifa_addr->sa_family == AF_INET6) {
-				struct sockaddr_in6* interfaceIpv6 = (struct sockaddr_in6*)(interface->ifa_addr);
-				struct sockaddr_in6* givenIpv6 = (struct sockaddr_in6*)(address);
-				if(memcmp(&(interfaceIpv6->sin6_addr.__in6_u), &(givenIpv6->sin6_addr.__in6_u), 16) == 0) {
-					isOwn = 1;
-				}
-			}
-		} else if(interface->ifa_addr->sa_family == AF_INET && isIpv4Mapped(address)) {
-			// check if it is an ipv6 mapped ipv4 address
-			struct sockaddr_in* interfaceIpv4 = (struct sockaddr_in*)(interface->ifa_addr);
-			struct sockaddr_in6* givenIpv6 = (struct sockaddr_in6*)(address);
-			if(memcmp(&(interfaceIpv4->sin_addr.s_addr), ((unsigned short*)(&givenIpv6->sin6_addr.__in6_u)) + 6, 4) == 0) {
-				isOwn = 1;
-			}
-		}
-	}
-	freeifaddrs(interfaceList);
-	return isOwn;
-}
-
 int isPacketValid(Packet* packet) {
 	if(memcmp(packet->protocolId, "P2PFSYNC", 8) != 0) {
 		return 0;
@@ -235,6 +178,8 @@ int isPacketValid(Packet* packet) {
 	return 1;
 }
 
+// we cannot use the socketUtil functions for this because in case we get
+// an ipv6 socket we have to join the multicast group as well
 int createBroadcastListener() {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));

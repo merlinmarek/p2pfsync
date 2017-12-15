@@ -7,5 +7,6 @@ int createUDPListener(const char* port);
 int createTCPListener(const char* port);
 void printIpAddress(const struct sockaddr* address);
 void printIpAddressFormatted(struct sockaddr* address);
+int isIpv4Mapped(struct sockaddr* address);
 
 #endif

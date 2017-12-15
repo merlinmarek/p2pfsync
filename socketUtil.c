@@ -122,3 +122,23 @@ int createUDPListener(const char* port) {
 int createTCPListener(const char* port) {
 	return createListenerSocket(port, SOCK_STREAM);
 }
+
+// returns whether some ipv6 address is actually an ipv6 mapped
+// ipv4 address
+int isIpv4Mapped(struct sockaddr* address) {
+	if(address->sa_family != AF_INET6) {
+		logger("address not in ipv6 format, no mapping possible\n");
+		return 0;
+	}
+	struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
+	unsigned short* ipv6AddressWords = (unsigned short*)(&ipv6Address->sin6_addr);
+	if(ipv6AddressWords[0] == 0 &&
+		ipv6AddressWords[1] == 0 &&
+		ipv6AddressWords[2] == 0 &&
+		ipv6AddressWords[3] == 0 &&
+		ipv6AddressWords[4] == 0 &&
+		ipv6AddressWords[5] == 0xffff) {
+		return 1;
+	}
+	return 0;
+}

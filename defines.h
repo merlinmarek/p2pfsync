@@ -8,6 +8,8 @@
 #define BROADCAST_LISTENER_PORT 		44700
 #define BROADCAST_LISTENER_PORT_STRING	"44700"
 
-#define IPV6_MULTICAST_ADDRESS "ff02::14:2857"
+#define IPV6_MULTICAST_ADDRESS "ff02::14:2857" // ff02 is for local link multicast 14:2857 is just an identifier for the group
+
+#define BASE_PATH "./sync_files"
 
 #endif
