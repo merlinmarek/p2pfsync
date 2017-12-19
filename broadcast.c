@@ -1,22 +1,22 @@
 #include <errno.h>
-#include <unistd.h>
-#include <string.h>
 #include <ifaddrs.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <netdb.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <sys/time.h>
-#include <sys/socket.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 #include <linux/if_packet.h>
 
+#include "broadcast.h"
 #include "defines.h"
 #include "logger.h"
-#include "broadcast.h"
-#include "shutdown.h"
 #include "peerList.h"
+#include "shutdown.h"
+#include "util.h"
+
+#define BROADCAST_LISTENER_PORT 		44700
+#define BROADCAST_LISTENER_PORT_STRING	"44700"
 
 #define MESSAGE_TYPE_DISCOVER 10
 #define MESSAGE_TYPE_AVAILABLE 11
@@ -29,9 +29,9 @@ typedef struct {
 
 void sendIpv4Broadcasts(char senderId[6]);
 void sendIpv6Multicast(char senderId[6]);
+void getOwnId(char buffer[6]);
 int sendAvailablePacket(struct sockaddr* destinationAddress, char senderId[6]);
 int isPacketValid(Packet* packet);
-void getOwnId(char buffer[6]);
 int createBroadcastListener();
 
 // the broadcasting thread is responsible for discovering
@@ -39,9 +39,8 @@ int createBroadcastListener();
 // this status should be in the peerList
 // whenever the broadcastThread discovers a new peer it should add it to the
 // peerList
-// discovery broadcast packets are sent in a fixed interval for now like 20 sec
 void* broadcastThread(void* tid) {
-	logger("broadcastThread started\n");
+	LOGD("broadcastThread started\n");
 
 	int broadcastListener = createBroadcastListener();
 
@@ -49,8 +48,9 @@ void* broadcastThread(void* tid) {
 	char ownId[6];
 	getOwnId(ownId);
 
-	logger("own id is: ");
-	printHex((unsigned char*)ownId, 6);
+	char hexBuffer[20];
+	get_hex_string((unsigned char*)ownId, 6, hexBuffer, sizeof(hexBuffer));
+	LOGD("own id is: %s\n", hexBuffer);
 
 	// initialize timer here so the first broadcast is done after the first timeout
 	struct timeval lastBroadcastDiscovery;
@@ -60,10 +60,10 @@ void* broadcastThread(void* tid) {
 	FD_ZERO(&master_fds);
 	FD_SET(broadcastListener, &master_fds);
 
-	logger("listening to broadcast @ %d\n", broadcastListener);
+	LOGD("listening to broadcast @ %d\n", broadcastListener);
 
 	while(!getShutdown()) {
-		if(getPassedTime(lastBroadcastDiscovery) > 10000.0) {
+		if(get_passed_time(lastBroadcastDiscovery) > 10000.0) {
 			// we want to rebroadcast after 10 seconds are over
 			// this should probably be random so the chance for collisions is low?!
 			// should this be something I need to think about with a layer 4 protocol like udp
@@ -81,7 +81,7 @@ void* broadcastThread(void* tid) {
 	    timeout.tv_sec = 1; // block at maximum one second at a time
 	    int success = select(broadcastListener + 1, &read_fds, NULL, NULL, &timeout);
 	    if(success == -1) {
-	    	logger("select: %s\n", strerror(errno));
+	    	LOGD("select: %s\n", strerror(errno));
 	    	continue;
 	    }
 	    if(success == 0) {
@@ -97,11 +97,11 @@ void* broadcastThread(void* tid) {
 	    // TEST BROADCASTING WITH socat - udp-datagram:134.130.223.255:44700,broadcast
 	    // or socat - upd6-sendto:[ipv6_address]:port
 	    if(receivedBytes == -1) {
-	    	logger("recvfrom failed %s\n", strerror(errno));
+	    	LOGD("recvfrom failed %s\n", strerror(errno));
 	    	continue;
 	    }
 	    if(receivedBytes == 0) {
-	    	logger("got zero bytes :/\n");
+	    	LOGD("got zero bytes :/\n");
 	    	continue;
 	    }
 
@@ -133,9 +133,9 @@ void* broadcastThread(void* tid) {
             	logger("\n");
             	*/
 
+            	; // needed because first statement after label
 
             	// we have seen the peer just now
-            	logger("");
             	struct timeval lastSeen;
             	gettimeofday(&lastSeen, NULL);
             	addIpToPeer(packet->senderId, (struct sockaddr*)&otherAddress, lastSeen);
@@ -171,9 +171,9 @@ void* broadcastThread(void* tid) {
             	const char* delim = "<";
             	buffer[asdf] = 0;
             	char* entry = strtok(buffer, delim);
-            	logger("%s\n", entry);
+            	LOGD("%s\n", entry);
             	while((entry = strtok(NULL, delim)) != NULL) {
-            		logger("%s\n", entry);
+            		LOGD("%s\n", entry);
             	}
 
             	close(commandfd);
@@ -187,13 +187,13 @@ void* broadcastThread(void* tid) {
             }
 	    } else {
 	    	// either we did receive a wrong amount of bytes or printPacket failed (success == 0)
-	    	logger("received %d bytes: %*.*s\n", receivedBytes, 0, receivedBytes, receiveBuffer);
+	    	LOGD("received %d bytes: %*.*s\n", receivedBytes, 0, receivedBytes, receiveBuffer);
 	    }
 	}
 
 	//cleanup
 	close(broadcastListener);
-	logger("broadcastThread ended\n");
+	LOGD("broadcastThread ended\n");
 	return NULL;
 }
 
@@ -202,7 +202,7 @@ void getOwnId(char buffer[6]) {
 	struct ifaddrs* interfaceList;
 	int success;
 	if((success = getifaddrs(&interfaceList)) != 0) {
-		logger("getifaddrs: %s\n", gai_strerror(success));
+		LOGD("getifaddrs: %s\n", gai_strerror(success));
 		return;
 	}
 
@@ -217,14 +217,14 @@ void getOwnId(char buffer[6]) {
 			struct sockaddr_ll* address = (struct sockaddr_ll*)interface->ifa_addr;
 			memcpy(buffer, address->sll_addr, 6);
 			idSet = 1;
-			logger("getOwnId id generation succeded from interface: %s\n", interface->ifa_name);
+			LOGD("getOwnId id generation succeded from interface: %s\n", interface->ifa_name);
 			break;
 		}
 	}
 	freeifaddrs(interfaceList);
 
 	if(idSet == 0) {
-		logger("getOwnId id generation failed, trying random number\n");
+		LOGD("getOwnId id generation failed, trying random number\n");
 		// somehow the id generation failed :/ so we generate a random number instead
 		// we need to seed the random generator here so not everyone generates the same
 		srand(time(0));
@@ -239,17 +239,17 @@ void getOwnId(char buffer[6]) {
 void sendIpv4Broadcasts(char senderId[6]) {
 	int broadcastSocket = socket(AF_INET6, SOCK_DGRAM, 0);
 	if(broadcastSocket == -1) {
-		logger("socket %s\n", strerror(errno));
+		LOGD("socket %s\n", strerror(errno));
 	}
 
 	if(setsockopt(broadcastSocket, SOL_SOCKET, SO_BROADCAST, &(int){1}, sizeof(int)) < 0) {
-		logger("setsockopt: %s\n", strerror(errno));
+		LOGD("setsockopt: %s\n", strerror(errno));
 	}
 
 	struct ifaddrs* interfaceList;
 	int success;
 	if((success = getifaddrs(&interfaceList)) != 0) {
-		logger("getifaddrs: %s\n", gai_strerror(success));
+		LOGD("getifaddrs: %s\n", gai_strerror(success));
 		return;
 	}
 
@@ -273,7 +273,7 @@ void sendIpv4Broadcasts(char senderId[6]) {
         packet.messageType = MESSAGE_TYPE_DISCOVER;
         memcpy(packet.senderId, senderId, 6);
         if(sendto(broadcastSocket, &packet, sizeof(packet), 0, (struct sockaddr*)&ipv4Address, sizeof(ipv4Address)) == -1) {
-            logger("sendto: %s\n", strerror(errno));
+            LOGD("sendto: %s\n", strerror(errno));
         }
 	}
 	freeifaddrs(interfaceList);
@@ -290,7 +290,7 @@ void sendIpv4Broadcasts(char senderId[6]) {
 void sendIpv6Multicast(char senderId[6]) {
 	int multicastSocket = socket(AF_INET6, SOCK_DGRAM, 0);
 	if(multicastSocket == -1) {
-		logger("socket %s\n", strerror(errno));
+		LOGD("socket %s\n", strerror(errno));
 	}
 
 	struct sockaddr_in6 ipv6Address;
@@ -304,7 +304,7 @@ void sendIpv6Multicast(char senderId[6]) {
 	packet.messageType = MESSAGE_TYPE_DISCOVER;
 	memcpy(packet.senderId, senderId, 6);
 	if(sendto(multicastSocket, &packet, sizeof(packet), 0, (struct sockaddr*)&ipv6Address, sizeof(ipv6Address)) == -1) {
-		logger("sendto: %s\n", strerror(errno));
+		LOGD("sendto: %s\n", strerror(errno));
 	}
 }
 
@@ -317,7 +317,7 @@ int sendAvailablePacket(struct sockaddr* destinationAddress, char senderId[6]) {
 
 	int senderSocket = socket(destinationAddress->sa_family, SOCK_DGRAM, 0);
 	if(senderSocket == -1) {
-		logger("socket: %s\n", strerror(errno));
+		LOGD("socket: %s\n", strerror(errno));
 		return -1;
 	}
     if(destinationAddress->sa_family == AF_INET6) {
@@ -328,7 +328,7 @@ int sendAvailablePacket(struct sockaddr* destinationAddress, char senderId[6]) {
 
 	socklen_t destinationAddressSize = destinationAddress->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
 	if(sendto(senderSocket, &packet, sizeof(packet), 0, destinationAddress, destinationAddressSize) == -1) {
-		logger("sendto: %s\n", strerror(errno));
+		LOGD("sendto: %s\n", strerror(errno));
 		return -1;
 	}
 	//logger("sent an available packet\n");
@@ -362,7 +362,7 @@ int createBroadcastListener() {
 	struct addrinfo* resultList;
 	int success = getaddrinfo(NULL, BROADCAST_LISTENER_PORT_STRING, &hints, &resultList);
 	if(success != 0) {
-		logger("getaddrinfo: %s\n", gai_strerror(success));
+		LOGD("getaddrinfo: %s\n", gai_strerror(success));
 		return -1;
 	}
 
@@ -376,11 +376,11 @@ int createBroadcastListener() {
 		}
 		listenerSocket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
 		if(listenerSocket == -1) {
-			logger("socket: %s\n", strerror(errno));
+			LOGD("socket: %s\n", strerror(errno));
 			continue;
 		}
 		if (setsockopt(listenerSocket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
-			logger("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
+			LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
 			continue;
 		}
 		// try to join the ipv6 multicast group
@@ -390,7 +390,7 @@ int createBroadcastListener() {
             group.ipv6mr_interface = 0;
             inet_pton(AF_INET6, IPV6_MULTICAST_ADDRESS, &group.ipv6mr_multiaddr);
             if(setsockopt(listenerSocket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &group, sizeof(group)) == -1) {
-            	logger("setsockopt %s\n", strerror(errno));
+            	LOGD("setsockopt %s\n", strerror(errno));
             }
 			break;
 		}
@@ -398,7 +398,7 @@ int createBroadcastListener() {
 		listenerSocket = -1;
 	}
 	if(listenerSocket == -1) {
-		logger("no ipv6 listener could be created, trying for ipv4 instead\n");
+		LOGD("no ipv6 listener could be created, trying for ipv4 instead\n");
 		// try to get ipv4 instead
 		for(iterator = resultList; iterator != NULL; iterator = iterator->ai_next) {
 			if(iterator->ai_family != AF_INET) {
@@ -406,11 +406,11 @@ int createBroadcastListener() {
 			}
 			listenerSocket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
 			if(listenerSocket == -1) {
-				logger("socket: %s\n", strerror(errno));
+				LOGD("socket: %s\n", strerror(errno));
 				continue;
 			}
 			if (setsockopt(listenerSocket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
-				logger("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
+				LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
 			}
 			if(bind(listenerSocket, iterator->ai_addr, iterator->ai_addrlen) == 0) {
 				break;

@@ -1,16 +1,18 @@
-#include <unistd.h>
-#include <signal.h>
 #include <pthread.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
 
-#include "logger.h"
-#include "shutdown.h"
-#include "peerList.h"
 #include "broadcast.h"
 #include "command.h"
 #include "fileTransfer.h"
+#include "logger.h"
+#include "peerList.h"
+#include "shutdown.h"
+#include "util.h"
 
 void sigintHandler(int unused) {
-	logger("\nreceived SIGINT, shutting down...\n");
+	LOGD("\nreceived SIGINT, shutting down...\n");
 	setShutdown(1);
 }
 
@@ -34,15 +36,15 @@ int main() {
 
 	success = pthread_create(&broadcastThreadId, NULL, broadcastThread, (void*)0);
 	if(success != 0) {
-		logger("pthread_create failed with return code %d\n", success);
+		LOGE("pthread_create failed with return code %d\n", success);
 	}
 	success = pthread_create(&commandThreadId, NULL, commandThread, (void*)0);
 	if(success != 0) {
-		logger("pthread_create failed with return code %d\n", success);
+		LOGE("pthread_create failed with return code %d\n", success);
 	}
 	success = pthread_create(&fileTransferThreadId, NULL, fileTransferThread, (void*)0);
 	if(success != 0) {
-		logger("pthread_create failed with return code %d\n", success);
+		LOGE("pthread_create failed with return code %d\n", success);
 	}
 
 	// setup sigint handler
@@ -57,7 +59,7 @@ int main() {
 	pthread_join(commandThreadId, NULL);
 	pthread_join(fileTransferThreadId, NULL);
 
-	logger("threads are down\n");
+	LOGD("threads are down\n");
 
 	// cleanup
 	freePeerList();

@@ -6,10 +6,10 @@
 #include "shutdown.h"
 
 void* fileTransferThread(void* tid) {
-	logger("fileTransferThread started\n");
+	LOGD("fileTransferThread started\n");
 	while(!getShutdown()) {
 		sleep(1);
 	}
-	logger("fileTransferThread ended\n");
+	LOGD("fileTransferThread ended\n");
 	return NULL;
 }

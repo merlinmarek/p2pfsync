@@ -1,20 +1,19 @@
-#include <unistd.h>
 #include <dirent.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <string.h>
-#include <sys/stat.h>
 #include <errno.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 
 #include "command.h"
-#include "shutdown.h"
-#include "logger.h"
 #include "defines.h"
+#include "logger.h"
+#include "shutdown.h"
 #include "util.h"
 
-
 void* commandThread(void* tid) {
-	logger("commandThread started\n");
+	LOGD("commandThread started\n");
 
 	// the command thread needs to have an in-memory representation of the file system
 	// the default sync folder is ./sync_folder so all paths are relative to this folder
@@ -45,9 +44,9 @@ void* commandThread(void* tid) {
 	// for hashing we will use md5
 	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-	int listenerSocket = createTCPListener(COMMAND_LISTENER_PORT_STRING);
+	int listenerSocket = create_tcp_listener(COMMAND_LISTENER_PORT_STRING);
 	if(listen(listenerSocket, 10) != 0) {
-		logger("listen %s\n", strerror(errno));
+		LOGD("listen %s\n", strerror(errno));
 	}
 
 	fd_set master_fds;
@@ -63,7 +62,7 @@ void* commandThread(void* tid) {
 	    timeout.tv_sec = 1; // block at maximum one second at a time
 	    int success = select(maxfd + 1, &read_fds, NULL, NULL, &timeout);
 	    if(success == -1) {
-	    	logger("select: %s\n", strerror(errno));
+	    	LOGD("select: %s\n", strerror(errno));
 	    	continue;
 	    }
 	    if(success == 0) {
@@ -85,7 +84,7 @@ void* commandThread(void* tid) {
                     // if he is not we should insert him there because we he must be a peer
                     if(remotefd == -1) {
                     	// accept failed
-                    	logger("accept %s\n", strerror(errno));
+                    	LOGD("accept %s\n", strerror(errno));
                     	continue;
                     }
                     FD_SET(remotefd, &master_fds);
@@ -100,7 +99,7 @@ void* commandThread(void* tid) {
                     if(receivedBytes == -1) {
                     	// error on recv
                     	// if this happens we want to close this socket and remove it from the master_fds
-                    	logger("recv %s\n", strerror(errno));
+                    	LOGD("recv %s\n", strerror(errno));
                     	FD_CLR(i, &master_fds);
                     	continue;
                     }
@@ -120,7 +119,7 @@ void* commandThread(void* tid) {
                     char* localPath = malloc(strlen(BASE_PATH) + strlen(requestPath) + 1);
                     memcpy(localPath, BASE_PATH, strlen(BASE_PATH));
                     strcpy(localPath + strlen(BASE_PATH), requestPath);
-                    logger("id: %s, path: %s\n", requestId, localPath);
+                    LOGD("id: %s, path: %s\n", requestId, localPath);
 
                     // now we enumerate files in the requested directory and return them as csv
                     char reply[8096];
@@ -173,6 +172,6 @@ void* commandThread(void* tid) {
 
 		}
 	}
-	logger("commandThread ended\n");
+	LOGD("commandThread ended\n");
 	return NULL;
 }

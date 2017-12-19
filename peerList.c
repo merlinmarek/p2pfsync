@@ -55,7 +55,7 @@ void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen
 	pthread_mutex_lock(&peerListLock);
 	Peer* peer = findPeer(id);
 	if(peer == NULL) {
-		logger("addIpToPeer peer not in list\n");
+		LOGD("addIpToPeer peer not in list\n");
 		appendPeer(id);
 		peer = findPeer(id);
 	}
@@ -67,7 +67,7 @@ void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen
 // internal helper function! MUST NOT LOCK MUTEX
 void appendPeer(char id[6]) {
 	if(findPeer(id) != NULL) {
-		logger("peer already in list\n");
+		LOGD("peer already in list\n");
 		return;
 	}
 	Peer* peer = (Peer*)malloc(sizeof(Peer));
@@ -91,7 +91,7 @@ void removePeer(char id[6]) {
 	}
 	Peer* peer = findPeer(id);
 	if(peer == NULL) {
-		logger("cannot remove peer, not in list\n");
+		LOGD("cannot remove peer, not in list\n");
 		goto end;
 	}
 	if(peerList == peer) {
@@ -115,9 +115,9 @@ void printPeerList() {
 	pthread_mutex_lock(&peerListLock);
 	Peer* peerIterator;
 	for(peerIterator = peerList; peerIterator != NULL; peerIterator = peerIterator->nextPeer) {
-		logger("[");
-		printHex((unsigned char*)peerIterator->id, 6);
-		logger("]\n");
+		char hexBuffer[128];
+		get_hex_string((unsigned char*)peerIterator->id, 6, hexBuffer, sizeof(hexBuffer));
+		LOGD("[%s]\n", hexBuffer);
 		printIpAddressList(&peerIterator->ipAddress);
 	}
 	pthread_mutex_unlock(&peerListLock);

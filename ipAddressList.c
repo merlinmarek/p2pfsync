@@ -77,8 +77,8 @@ void printIpAddressList(IpAddressEntry** list) {
 	for(ipAddressIterator = *list; ipAddressIterator != NULL; ipAddressIterator = ipAddressIterator->nextEntry) {
 		// format is
 		// \t[ipversion ip]
-		logger("\t[");
-		printIpAddressFormatted((struct sockaddr*)(&ipAddressIterator->ipAddress));
-		logger("]\n");
+		char ipBuffer[128];
+		get_ip_address_formatted((struct sockaddr*)&ipAddressIterator->ipAddress, ipBuffer, sizeof(ipBuffer));
+		LOGD("\t[%s]\n", ipBuffer);
 	}
 }

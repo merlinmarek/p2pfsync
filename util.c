@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <stdio.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -11,74 +12,61 @@
 #include "broadcast.h"
 #include "util.h"
 
-void printIpAddress(const struct sockaddr* address) {
-	char ipBuffer[256];
-	memset(ipBuffer, 0, sizeof(ipBuffer));
-	if(address->sa_family == AF_INET) {
-		inet_ntop(address->sa_family, &(((struct sockaddr_in*)address)->sin_addr), ipBuffer, sizeof(ipBuffer));
-	} else if(address->sa_family == AF_INET6) {
-		inet_ntop(address->sa_family, &(((struct sockaddr_in6*)address)->sin6_addr), ipBuffer, sizeof(ipBuffer));
-	} else {
-		logger("unkown address family %d", address->sa_family);
-		return;
+void get_hex_string(const unsigned char* in_buffer, const size_t count, char* buffer, const size_t buffer_size) {
+	size_t i;
+	for(i = 0; i < count && 2 * (i + 1) < buffer_size; i++) {
+		sprintf(&buffer[2*i], "%02x", in_buffer[i]);
 	}
-	logger("%s", ipBuffer);
-}
-
-void printHex(const unsigned char* buffer, const int count) {
-	int i;
-	for(i = 0; i < count; i++) {
-		logger("%02x", buffer[i]);
-	}
+	buffer[2 * i] = 0;
 }
 
 // gives the difference t1 - t2 in milliseconds
-double getTimeDifferenceMs(struct timeval t1, struct timeval t2) {
+double get_time_difference_ms(struct timeval t1, struct timeval t2) {
     double elapsedTime = (t1.tv_sec - t2.tv_sec) * 1000.0; // sec to ms
     elapsedTime += (t1.tv_usec - t2.tv_usec) / 1000.0;		// us to ms
     return elapsedTime;
 }
 
 // gives the difference now - t
-double getPassedTime(struct timeval t) {
+double get_passed_time(struct timeval t) {
 	struct timeval now;
 	gettimeofday(&now, 0);
-	return getTimeDifferenceMs(now, t);
+	return get_time_difference_ms(now, t);
 }
 
-
-void printIpAddressFormatted(struct sockaddr* address) {
-	char ipBuffer[256];
-	memset(ipBuffer, 0, sizeof(ipBuffer));
+void get_ip_address_formatted(struct sockaddr* address, char* buffer, size_t buffer_size) {
+	size_t index = 0;
 	if(address->sa_family == AF_INET) {
 		// ipv4 address
-		logger("IPv4 ");
+		strncpy(&buffer[index], "IPv4 ", 5);
+		index += 5;
 		struct sockaddr_in* ipv4Address = (struct sockaddr_in*)address;
-		inet_ntop(address->sa_family, &(ipv4Address->sin_addr), ipBuffer, sizeof(ipBuffer));
+		inet_ntop(address->sa_family, &(ipv4Address->sin_addr), &buffer[index], buffer_size - index);
 	} else if(address->sa_family == AF_INET6) {
-		if(isIpv4Mapped(address)) {
+		if(is_ipv4_mapped(address)) {
 			// this is an ipv6 mapped ipv4 address
 			// the ipv4 address is stored in the last 4 bytes of the 16 byte ipv6 address
-			logger("IPv4 ");
+            strncpy(&buffer[index], "IPv4 ", 5);
+            index += 5;
 			struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
 			char* ipv4AddressStart = ((char*)(&ipv6Address->sin6_addr.__in6_u)) + 12;
 			struct in_addr* ipv4InAddr = (struct in_addr*)ipv4AddressStart;
-			inet_ntop(AF_INET, ipv4InAddr, ipBuffer, sizeof(ipBuffer));
+			inet_ntop(AF_INET, ipv4InAddr, &buffer[index], buffer_size - index);
 		} else {
 			// regular ipv6 address
-			logger("IPv6 ");
+            strncpy(&buffer[index], "IPv6 ", 5);
+            index += 5;
 			struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
-			inet_ntop(AF_INET6, &(ipv6Address->sin6_addr), ipBuffer, sizeof(ipBuffer));
+			inet_ntop(AF_INET6, &(ipv6Address->sin6_addr), &buffer[index], buffer_size - index);
 		}
-
 	} else {
-		logger("unkown address family %d", address->sa_family);
-		return;
+		strncpy(&buffer[index], "unkown address family", buffer_size - index);
 	}
-	logger("%s", ipBuffer);
+	// make sure that the buffer is 0 terminated
+	buffer[buffer_size - 1] = 0;
 }
 
-int createListenerSocket(const char* port, int ai_socktype) {
+int create_listener_socket(const char* port, int ai_socktype) {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
@@ -87,7 +75,7 @@ int createListenerSocket(const char* port, int ai_socktype) {
 	struct addrinfo* resultList;
 	int success = getaddrinfo(NULL, port, &hints, &resultList);
 	if(success != 0) {
-		logger("getaddrinfo: %s\n", gai_strerror(success));
+		LOGD("getaddrinfo: %s\n", gai_strerror(success));
 		return -1;
 	}
 
@@ -101,11 +89,11 @@ int createListenerSocket(const char* port, int ai_socktype) {
 		}
 		listenerSocket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
 		if(listenerSocket == -1) {
-			logger("socket: %s\n", strerror(errno));
+			LOGD("socket: %s\n", strerror(errno));
 			continue;
 		}
 		if (setsockopt(listenerSocket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
-			logger("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
+			LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
 			continue;
 		}
 		if(bind(listenerSocket, iterator->ai_addr, iterator->ai_addrlen) == 0) {
@@ -122,11 +110,11 @@ int createListenerSocket(const char* port, int ai_socktype) {
 			}
 			listenerSocket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
 			if(listenerSocket == -1) {
-				logger("socket: %s\n", strerror(errno));
+				LOGD("socket: %s\n", strerror(errno));
 				continue;
 			}
 			if (setsockopt(listenerSocket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
-				logger("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
+				LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
 			}
 			if(bind(listenerSocket, iterator->ai_addr, iterator->ai_addrlen) == 0) {
 				break;
@@ -138,19 +126,18 @@ int createListenerSocket(const char* port, int ai_socktype) {
 	return listenerSocket;
 }
 
-int createUDPListener(const char* port) {
-	return createListenerSocket(port, SOCK_DGRAM);
+int create_udp_listener(const char* port) {
+	return create_listener_socket(port, SOCK_DGRAM);
 }
 
-int createTCPListener(const char* port) {
-	return createListenerSocket(port, SOCK_STREAM);
+int create_tcp_listener(const char* port) {
+	return create_listener_socket(port, SOCK_STREAM);
 }
 
 // returns whether some ipv6 address is actually an ipv6 mapped
 // ipv4 address
-int isIpv4Mapped(struct sockaddr* address) {
+int is_ipv4_mapped(struct sockaddr* address) {
 	if(address->sa_family != AF_INET6) {
-		logger("address not in ipv6 format, no mapping possible\n");
 		return 0;
 	}
 	struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)address;
