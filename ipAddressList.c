@@ -1,10 +1,9 @@
 #include "ipAddressList.h"
 #include "logger.h"
-#include "socketUtil.h"
-
 #include <string.h>
 #include <stdlib.h>
 #include <netinet/in.h>
+#include "util.h"
 
 // internal helper function
 IpAddressEntry* findEntry(IpAddressEntry** list, struct sockaddr* ipAddress) {

@@ -8,5 +8,4 @@ void destroyLoggerLock();
 // thread safe (hopefully) logging function
 void logger(const char* formatString, ...);
 
-
 #endif

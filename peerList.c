@@ -8,6 +8,7 @@
 #include "peerList.h"
 #include "ipAddressList.h"
 #include "broadcast.h"
+#include "util.h"
 
 void appendPeer(char id[6]);
 
@@ -115,7 +116,7 @@ void printPeerList() {
 	Peer* peerIterator;
 	for(peerIterator = peerList; peerIterator != NULL; peerIterator = peerIterator->nextPeer) {
 		logger("[");
-		printSenderId(peerIterator->id);
+		printHex((unsigned char*)peerIterator->id, 6);
 		logger("]\n");
 		printIpAddressList(&peerIterator->ipAddress);
 	}

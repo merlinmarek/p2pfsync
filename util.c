@@ -2,13 +2,14 @@
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
 #include "logger.h"
-#include "socketUtil.h"
 #include "broadcast.h"
+#include "util.h"
 
 void printIpAddress(const struct sockaddr* address) {
 	char ipBuffer[256];
@@ -23,6 +24,28 @@ void printIpAddress(const struct sockaddr* address) {
 	}
 	logger("%s", ipBuffer);
 }
+
+void printHex(const unsigned char* buffer, const int count) {
+	int i;
+	for(i = 0; i < count; i++) {
+		logger("%02x", buffer[i]);
+	}
+}
+
+// gives the difference t1 - t2 in milliseconds
+double getTimeDifferenceMs(struct timeval t1, struct timeval t2) {
+    double elapsedTime = (t1.tv_sec - t2.tv_sec) * 1000.0; // sec to ms
+    elapsedTime += (t1.tv_usec - t2.tv_usec) / 1000.0;		// us to ms
+    return elapsedTime;
+}
+
+// gives the difference now - t
+double getPassedTime(struct timeval t) {
+	struct timeval now;
+	gettimeofday(&now, 0);
+	return getTimeDifferenceMs(now, t);
+}
+
 
 void printIpAddressFormatted(struct sockaddr* address) {
 	char ipBuffer[256];

@@ -8,20 +8,193 @@
 #include <netdb.h>
 #include <stdlib.h>
 #include <time.h>
+#include <sys/time.h>
+#include <sys/socket.h>
 #include <linux/if_packet.h>
 
 #include "defines.h"
 #include "logger.h"
 #include "broadcast.h"
+#include "shutdown.h"
+#include "peerList.h"
 
-void printSenderId(char buffer[6]) {
-	logger("%02x%02x%02x%02x%02x%02x",
-			(unsigned char)buffer[0],
-			(unsigned char)buffer[1],
-			(unsigned char)buffer[2],
-			(unsigned char)buffer[3],
-			(unsigned char)buffer[4],
-			(unsigned char)buffer[5]);
+#define MESSAGE_TYPE_DISCOVER 10
+#define MESSAGE_TYPE_AVAILABLE 11
+
+typedef struct {
+	char protocolId[8]; // has to be "P2PFSYNC"
+	unsigned char messageType; // has to be one of the MESSAGE_TYPE_... defines
+	char senderId[6]; // has to be the sender id which is obtained by getOwnId
+} __attribute__((packed)) Packet; // should be packed for size and small packets
+
+void sendIpv4Broadcasts(char senderId[6]);
+void sendIpv6Multicast(char senderId[6]);
+int sendAvailablePacket(struct sockaddr* destinationAddress, char senderId[6]);
+int isPacketValid(Packet* packet);
+void getOwnId(char buffer[6]);
+int createBroadcastListener();
+
+// the broadcasting thread is responsible for discovering
+// new peers and responding to discovery packets sent by other peers
+// this status should be in the peerList
+// whenever the broadcastThread discovers a new peer it should add it to the
+// peerList
+// discovery broadcast packets are sent in a fixed interval for now like 20 sec
+void* broadcastThread(void* tid) {
+	logger("broadcastThread started\n");
+
+	int broadcastListener = createBroadcastListener();
+
+	// we also need our id so other clients can match ip addresses
+	char ownId[6];
+	getOwnId(ownId);
+
+	logger("own id is: ");
+	printHex((unsigned char*)ownId, 6);
+
+	// initialize timer here so the first broadcast is done after the first timeout
+	struct timeval lastBroadcastDiscovery;
+	gettimeofday(&lastBroadcastDiscovery, NULL);
+
+	fd_set master_fds;
+	FD_ZERO(&master_fds);
+	FD_SET(broadcastListener, &master_fds);
+
+	logger("listening to broadcast @ %d\n", broadcastListener);
+
+	while(!getShutdown()) {
+		if(getPassedTime(lastBroadcastDiscovery) > 10000.0) {
+			// we want to rebroadcast after 10 seconds are over
+			// this should probably be random so the chance for collisions is low?!
+			// should this be something I need to think about with a layer 4 protocol like udp
+			// or is this automagically done by the lower layers?
+			gettimeofday(&lastBroadcastDiscovery, NULL); // reset the timer
+            sendIpv6Multicast(ownId);
+            sendIpv4Broadcasts(ownId);
+
+            printPeerList();
+		}
+
+	    fd_set read_fds = master_fds;
+	    struct timeval timeout;
+	    memset(&timeout, 0, sizeof(timeout));
+	    timeout.tv_sec = 1; // block at maximum one second at a time
+	    int success = select(broadcastListener + 1, &read_fds, NULL, NULL, &timeout);
+	    if(success == -1) {
+	    	logger("select: %s\n", strerror(errno));
+	    	continue;
+	    }
+	    if(success == 0) {
+	    	// timed out
+	    	continue;
+	    }
+
+	    char receiveBuffer[128];
+	    struct sockaddr_storage otherAddress;
+	    socklen_t otherLength = sizeof(otherAddress);
+	    int receivedBytes = recvfrom(broadcastListener, receiveBuffer, sizeof(receiveBuffer)-1, 0, (struct sockaddr*)&otherAddress, &otherLength);
+
+	    // TEST BROADCASTING WITH socat - udp-datagram:134.130.223.255:44700,broadcast
+	    // or socat - upd6-sendto:[ipv6_address]:port
+	    if(receivedBytes == -1) {
+	    	logger("recvfrom failed %s\n", strerror(errno));
+	    	continue;
+	    }
+	    if(receivedBytes == 0) {
+	    	logger("got zero bytes :/\n");
+	    	continue;
+	    }
+
+	    Packet* packet = (Packet*)receiveBuffer;
+	    if(receivedBytes == sizeof(Packet) && isPacketValid(packet)) {
+	    	if(memcmp(packet->senderId, ownId, 6) == 0) {
+	    		// we do not want to deal with our own messages
+	    		continue;
+	    	}
+
+            // when we reach this point this is a valid message from some other peer
+            // check whether this is a discover request or an available message
+            switch(packet->messageType) {
+            case MESSAGE_TYPE_DISCOVER:
+            	// we want to respond to a discovery request
+            	/*logger("["); printSenderId(packet->senderId); logger("]");
+            	logger("[DISCOVERY]");
+            	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
+            	logger("\n");
+            	*/
+
+            	sendAvailablePacket((struct sockaddr*)&otherAddress, ownId);
+            	break;
+            case MESSAGE_TYPE_AVAILABLE:
+            	/*
+            	logger("["); printSenderId(packet->senderId); logger("]");
+            	logger("[AVAILABLE]");
+            	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
+            	logger("\n");
+            	*/
+
+
+            	// we have seen the peer just now
+            	logger("");
+            	struct timeval lastSeen;
+            	gettimeofday(&lastSeen, NULL);
+            	addIpToPeer(packet->senderId, (struct sockaddr*)&otherAddress, lastSeen);
+
+            	/*
+            	 * THIS DOES NOT BELONG HERE! WE NEED TO SOMEHOW SIGNAL TO THE COMMAND THREAD
+            	 * THAT THERE IS A NEW CLIENT
+            	 */
+
+            	// send our id :)
+            	//logger("trying to send\n");
+            	int commandfd = socket(otherAddress.ss_family, SOCK_STREAM, 0);
+            	// first we need to set the port
+            	if(otherAddress.ss_family == AF_INET) {
+            		// ipv4
+            		struct sockaddr_in* ipv4Address = (struct sockaddr_in*)&otherAddress;
+            		ipv4Address->sin_port = htons(COMMAND_LISTENER_PORT);
+            	} else {
+            		// ipv6
+            		struct sockaddr_in6* ipv6Address = (struct sockaddr_in6*)&otherAddress;
+            		ipv6Address->sin6_port = htons(COMMAND_LISTENER_PORT);
+            	}
+            	if(connect(commandfd, (struct sockaddr*)&otherAddress, otherLength) != 0) {
+            		//logger("connect %s\n", strerror(errno));
+            	}
+            	const char* request = "GET /";
+            	if(send(commandfd, request, strlen(request), 0) < 0) {
+            		//logger("send %s\n", strerror(errno));
+            	}
+
+            	char buffer[8096];
+            	int asdf = recv(commandfd, buffer, 8096, 0);
+            	const char* delim = "<";
+            	buffer[asdf] = 0;
+            	char* entry = strtok(buffer, delim);
+            	logger("%s\n", entry);
+            	while((entry = strtok(NULL, delim)) != NULL) {
+            		logger("%s\n", entry);
+            	}
+
+            	close(commandfd);
+            	//logger("closed\n");
+
+
+            	break;
+            default:
+            	// this should never happen
+            	break;
+            }
+	    } else {
+	    	// either we did receive a wrong amount of bytes or printPacket failed (success == 0)
+	    	logger("received %d bytes: %*.*s\n", receivedBytes, 0, receivedBytes, receiveBuffer);
+	    }
+	}
+
+	//cleanup
+	close(broadcastListener);
+	logger("broadcastThread ended\n");
+	return NULL;
 }
 
 
