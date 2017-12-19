@@ -25,14 +25,14 @@
 // the command thread queries available ip addresses and newly discovered peers
 
 // these mutex functions MUST be called
-void initializePeerListLock();
-void destroyPeerListLock();
+void initialize_peer_list_lock();
+void destroy_peer_list_lock();
 
 // addIpToPeer should automatically append the peer if it is not in the list
-void addIpToPeer(char id[6], struct sockaddr* ipAddress, struct timeval lastSeen);
-void removePeer(char id[6]);
-void printPeerList();
-void freePeerList();
+void add_ip_to_peer(char id[6], struct sockaddr* ip_address, struct timeval last_seen);
+void remove_peer(char id[6]);
+void print_peer_list();
+void free_peer_list();
 
 // there should be a function here for the command thread to obtain a copy of the list
 // or at least some ip addresses

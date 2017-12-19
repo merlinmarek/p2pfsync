@@ -1,6 +1,6 @@
 #ifndef FILE_TRANSFER_H
 #define FILE_TRANSFER_H
 
-void* fileTransferThread(void* tid);
+void* file_transfer_thread(void* tid);
 
 #endif

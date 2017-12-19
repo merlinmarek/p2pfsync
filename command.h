@@ -3,6 +3,6 @@
 
 // this module only exposes the commandThread
 // for this to work correctly the peerList has to be setup beforehand
-void* commandThread(void* tid);
+void* command_thread(void* tid);
 
 #endif

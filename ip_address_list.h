@@ -1,0 +1,19 @@
+#ifndef IP_ADDRESS_LIST_H
+#define IP_ADDRESS_LIST_H
+
+#include <sys/time.h>
+#include <sys/socket.h>
+
+typedef struct ip_address_entry {
+	struct ip_address_entry* next_entry;
+	struct sockaddr_storage ip_address;
+	struct timeval last_seen;
+} ip_address_entry_type;
+
+void free_ip_address_list(ip_address_entry_type** list);
+void add_or_update_entry(ip_address_entry_type** list, struct sockaddr* ip_address, struct timeval last_seen);
+// passing the ip address by ** is not really necessary for printIpAddressList but it is more
+// convenient if list is always **
+void print_ip_address_list(ip_address_entry_type** list);
+
+#endif

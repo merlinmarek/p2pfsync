@@ -3,6 +3,6 @@
 
 // this module only exposes the broadcastThread
 // for this to work correctly the peerList has to be setup beforehand
-void* broadcastThread(void* tid);
+void* broadcast_thread(void* tid);
 
 #endif

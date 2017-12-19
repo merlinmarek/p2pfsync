@@ -12,14 +12,12 @@
 #include "shutdown.h"
 #include "util.h"
 
-void* commandThread(void* tid) {
-	LOGD("commandThread started\n");
-
+void* command_thread(void* tid) {
+	LOGD("started\n");
 	// the command thread needs to have an in-memory representation of the file system
 	// the default sync folder is ./sync_folder so all paths are relative to this folder
 	// this makes a request for /test go to ./sync_folder/test
 	// the command thread should then report all files/subdirectories in the requested directory
-
 
 	// first we need to init the internal file system structure
 	// whether or not this needs custom classes I don't know atm
@@ -44,23 +42,23 @@ void* commandThread(void* tid) {
 	// for hashing we will use md5
 	// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-	int listenerSocket = create_tcp_listener(COMMAND_LISTENER_PORT_STRING);
-	if(listen(listenerSocket, 10) != 0) {
+	int listener_socket = create_tcp_listener(COMMAND_LISTENER_PORT_STRING);
+	if(listen(listener_socket, 10) != 0) {
 		LOGD("listen %s\n", strerror(errno));
 	}
 
-	fd_set master_fds;
-	FD_ZERO(&master_fds);
-	FD_SET(listenerSocket, &master_fds);
+	fd_set master_set;
+	FD_ZERO(&master_set);
+	FD_SET(listener_socket, &master_set);
 
-	int maxfd = listenerSocket;
+	int maxfd = listener_socket;
 
-	while(!getShutdown()) {
-	    fd_set read_fds = master_fds;
+	while(!get_shutdown()) {
+	    fd_set read_set = master_set;
 	    struct timeval timeout;
 	    memset(&timeout, 0, sizeof(timeout));
 	    timeout.tv_sec = 1; // block at maximum one second at a time
-	    int success = select(maxfd + 1, &read_fds, NULL, NULL, &timeout);
+	    int success = select(maxfd + 1, &read_set, NULL, NULL, &timeout);
 	    if(success == -1) {
 	    	LOGD("select: %s\n", strerror(errno));
 	    	continue;
@@ -72,14 +70,14 @@ void* commandThread(void* tid) {
 	    // check which socket is ready
 	    int i;
 	    for(i = 0; i <= maxfd; i++) {
-	    	if(FD_ISSET(i, &read_fds)) {
+	    	if(FD_ISSET(i, &read_set)) {
 	    		// the socket is ready
-	    		if(i == listenerSocket) {
+	    		if(i == listener_socket) {
 	    			// we are ready to accept a new client
-                    struct sockaddr_storage otherAddress;
-                    socklen_t otherLength = sizeof(otherAddress);
+                    struct sockaddr_storage other_address;
+                    socklen_t other_length = sizeof(other_address);
 
-                    int remotefd = accept(listenerSocket, (struct sockaddr*)&otherAddress, &otherLength);
+                    int remotefd = accept(listener_socket, (struct sockaddr*)&other_address, &other_length);
                     // we should probably chech if this client is already in the peer list
                     // if he is not we should insert him there because we he must be a peer
                     if(remotefd == -1) {
@@ -87,39 +85,39 @@ void* commandThread(void* tid) {
                     	LOGD("accept %s\n", strerror(errno));
                     	continue;
                     }
-                    FD_SET(remotefd, &master_fds);
+                    FD_SET(remotefd, &master_set);
                     if(remotefd > maxfd) {
                     	// keep track of the maximum socket number
                     	maxfd = remotefd;
                     }
 	    		} else {
 	    			// this is a regular client socket that either closed the connection or wants something from us
-                    char receiveBuffer[128];
-                    int receivedBytes = recv(i, receiveBuffer, sizeof(receiveBuffer), 0);
-                    if(receivedBytes == -1) {
+                    char receive_buffer[128];
+                    int received_bytes = recv(i, receive_buffer, sizeof(receive_buffer), 0);
+                    if(received_bytes == -1) {
                     	// error on recv
                     	// if this happens we want to close this socket and remove it from the master_fds
                     	LOGD("recv %s\n", strerror(errno));
-                    	FD_CLR(i, &master_fds);
+                    	FD_CLR(i, &master_set);
                     	continue;
                     }
-                    if(receivedBytes == 0) {
+                    if(received_bytes == 0) {
                     	// connection closed by remote
-                    	FD_CLR(i, &master_fds);
+                    	FD_CLR(i, &master_set);
                     	continue;
                     }
-                    if(receivedBytes < 5) {
+                    if(received_bytes < 5) {
                     	// a request needs a GET / as minimum
                     	continue;
                     }
-                    receiveBuffer[receivedBytes] = ' '; // for strtok
+                    receive_buffer[received_bytes] = ' '; // for strtok
                     const char* delim = " ";
-                    const char* requestId = strtok(receiveBuffer, delim);
-                    const char* requestPath = strtok(NULL, delim);
-                    char* localPath = malloc(strlen(BASE_PATH) + strlen(requestPath) + 1);
-                    memcpy(localPath, BASE_PATH, strlen(BASE_PATH));
-                    strcpy(localPath + strlen(BASE_PATH), requestPath);
-                    LOGD("id: %s, path: %s\n", requestId, localPath);
+                    const char* request_id = strtok(receive_buffer, delim);
+                    const char* request_path = strtok(NULL, delim);
+                    char* local_path = malloc(strlen(BASE_PATH) + strlen(request_path) + 1);
+                    memcpy(local_path, BASE_PATH, strlen(BASE_PATH));
+                    strcpy(local_path + strlen(BASE_PATH), request_path);
+                    LOGD("id: %s, path: %s\n", request_id, local_path);
 
                     // now we enumerate files in the requested directory and return them as csv
                     char reply[8096];
@@ -127,13 +125,13 @@ void* commandThread(void* tid) {
 
                     struct stat info;
 
-                    if(lstat(localPath, &info) != 0 || !S_ISDIR(info.st_mode)) {
+                    if(lstat(local_path, &info) != 0 || !S_ISDIR(info.st_mode)) {
                     	// the directory does not exist or is not a directory
                     	strcpy(reply, "requested invalid directory");
                     } else {
                     	// valid directory so list its contents
                     	DIR* directory;
-                    	directory = opendir(localPath);
+                    	directory = opendir(local_path);
                     	if(!directory) {
                     		// error :/
                     	}
@@ -157,7 +155,7 @@ void* commandThread(void* tid) {
                     }
                     send(i, reply, strlen(reply), 0);
 
-                    free(localPath);
+                    free(local_path);
 	    		}
 	    	}
 	    }
@@ -167,7 +165,7 @@ void* commandThread(void* tid) {
 	// when we are done, we want to close all still open connections
 	int sock;
 	for(sock = 0; sock < maxfd; sock++) {
-		if(FD_ISSET(sock, &master_fds)) {
+		if(FD_ISSET(sock, &master_set)) {
 			close(sock);
 
 		}

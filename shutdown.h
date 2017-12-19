@@ -2,10 +2,10 @@
 #define SHUTDOWN_H
 
 // these mutex functions MUST be called
-void initializeShutdownLock();
-void destroyShutdownLock();
+void initialize_shutdown_lock();
+void destroy_shutdown_lock();
 
-void setShutdown(int shutdown);
-int getShutdown();
+void set_shutdown(int shutdown);
+int get_shutdown();
 
 #endif

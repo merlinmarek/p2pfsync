@@ -5,15 +5,15 @@
 
 #include "broadcast.h"
 #include "command.h"
-#include "fileTransfer.h"
+#include "file_transfer.h"
 #include "logger.h"
-#include "peerList.h"
+#include "peer_list.h"
 #include "shutdown.h"
 #include "util.h"
 
-void sigintHandler(int unused) {
+void sigint_handler(int unused) {
 	LOGD("\nreceived SIGINT, shutting down...\n");
-	setShutdown(1);
+	set_shutdown(1);
 }
 
 // the main function
@@ -22,52 +22,52 @@ void sigintHandler(int unused) {
 // - cleans up when all thread are down
 int main() {
 	// first initialize all the locks
-	initializeShutdownLock();
-	initializeLoggerLock();
-	initializePeerListLock();
+	initialize_shutdown_lock();
+	initialize_logger_lock();
+	initialize_peer_list_lock();
 
-	setShutdown(0); // make sure we do not shutdown right after starting
+	set_shutdown(0); // make sure we do not shutdown right after starting
 
-	pthread_t broadcastThreadId;
-	pthread_t commandThreadId;
-	pthread_t fileTransferThreadId;
+	pthread_t broadcast_thread_id;
+	pthread_t command_thread_id;
+	pthread_t file_transfer_thread_id;
 
 	int success;
 
-	success = pthread_create(&broadcastThreadId, NULL, broadcastThread, (void*)0);
+	success = pthread_create(&broadcast_thread_id, NULL, broadcast_thread, (void*)0);
 	if(success != 0) {
 		LOGE("pthread_create failed with return code %d\n", success);
 	}
-	success = pthread_create(&commandThreadId, NULL, commandThread, (void*)0);
+	success = pthread_create(&command_thread_id, NULL, command_thread, (void*)0);
 	if(success != 0) {
 		LOGE("pthread_create failed with return code %d\n", success);
 	}
-	success = pthread_create(&fileTransferThreadId, NULL, fileTransferThread, (void*)0);
+	success = pthread_create(&file_transfer_thread_id, NULL, file_transfer_thread, (void*)0);
 	if(success != 0) {
 		LOGE("pthread_create failed with return code %d\n", success);
 	}
 
 	// setup sigint handler
-	signal(SIGINT, sigintHandler);
+	signal(SIGINT, sigint_handler);
 
-	while(!getShutdown()) {
+	while(!get_shutdown()) {
 		sleep(1);
 	}
 
 	// join all threads
-	pthread_join(broadcastThreadId, NULL);
-	pthread_join(commandThreadId, NULL);
-	pthread_join(fileTransferThreadId, NULL);
+	pthread_join(broadcast_thread_id, NULL);
+	pthread_join(command_thread_id, NULL);
+	pthread_join(file_transfer_thread_id, NULL);
 
 	LOGD("threads are down\n");
 
 	// cleanup
-	freePeerList();
+	free_peer_list();
 
 	// destroy all locks
-	destroyShutdownLock();
-	destroyPeerListLock();
-	destroyLoggerLock();
+	destroy_shutdown_lock();
+	destroy_peer_list_lock();
+	destroy_logger_lock();
 
 	pthread_exit(NULL); // should be at end of main function
 }

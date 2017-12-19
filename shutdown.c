@@ -5,12 +5,12 @@
 // the shutdown variable has its own lock which MUST BE INITIALIZED ON STARTUP
 static pthread_mutex_t shutdownLock;
 
-void initializeShutdownLock() {
+void initialize_shutdown_lock() {
 	if(pthread_mutex_init(&shutdownLock, NULL) != 0) {
 		printf("pthread_mutex_init failed\n");
 	}
 }
-void destroyShutdownLock() {
+void destroy_shutdown_lock() {
 	if(pthread_mutex_destroy(&shutdownLock) != 0) {
 		printf("pthread_mutex_destroy failed\n");
 	}
@@ -19,13 +19,13 @@ void destroyShutdownLock() {
 // the shutdown variable is only accessible through these getters/setters
 static int shouldShutdown;
 
-void setShutdown(int shutdown) {
+void set_shutdown(int shutdown) {
 	pthread_mutex_lock(&shutdownLock);
 	shouldShutdown = shutdown;
 	pthread_mutex_unlock(&shutdownLock);
 }
 
-int getShutdown() {
+int get_shutdown() {
 	int temp = -1;
 	pthread_mutex_lock(&shutdownLock);
 	temp = shouldShutdown;
