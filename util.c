@@ -12,6 +12,117 @@
 #include "broadcast.h"
 #include "util.h"
 
+// another helper function to receive exactly n bytes of a tcp stream with a timeout used by receive_tcp_message
+int receive_tcp_n(int socketfd, char* buffer, size_t buffer_size, size_t n, double timeout) {
+	timeout = 1000.0;
+	// receive timeout will be handled with select
+	// and a timer
+	struct timeval start_time;
+	gettimeofday(&start_time, NULL);
+
+	fd_set master_read_set;
+	FD_ZERO(&master_read_set);
+	FD_SET(socketfd, &master_read_set);
+
+	int buffer_index = 0;
+
+	while(buffer_index < buffer_size && buffer_index < n) {
+		fd_set read_set = master_read_set;
+		struct timeval select_timeout;
+		select_timeout.tv_sec = (int)timeout;
+		select_timeout.tv_usec = 0;
+		int select_return = select(socketfd + 1, &read_set, NULL, NULL, &select_timeout);
+		if(select_return == -1) {
+			// on select
+			LOGD("spacken\n");
+			return select_return;
+		}
+		double passed_time = get_passed_time(start_time);
+        if(passed_time/1000.0 > timeout) {
+            // timeout
+			LOGD("kanacken\n");
+            return select_return;
+        }
+		// maybe the socket is ready :)
+		if(FD_ISSET(socketfd, &read_set)) {
+			// calculate the maximum bytes that still can be received
+			int max_recv = buffer_size > n ? buffer_size - buffer_index : n - buffer_index;
+			int recv_return = recv(socketfd, (void*)(buffer + buffer_index), max_recv - buffer_index, 0);
+			if(recv_return <= 0) {
+				// error or disconnected
+				return recv_return;
+			}
+			buffer_index += recv_return;
+		}
+	}
+	return buffer_index;
+}
+
+// this is a helper function to receive a length prefixed tcp message with a maximum length and a timeout, THIS IS A BLOCKING OPERATION
+int receive_tcp_message(int socketfd, char* buffer, size_t buffer_size, double timeout) {
+	timeout = 10000.0;
+	// receive timeout will be handled with select
+	// and a timer
+	struct timeval start_time;
+	gettimeofday(&start_time, NULL);
+
+	char message_size_buffer[4];
+	int receive_return = receive_tcp_n(socketfd, message_size_buffer, sizeof(message_size_buffer), 4, 10.0);
+	if(receive_return <= 0) {
+		return receive_return;
+	}
+	if(receive_return != 4) {
+		// we need EXACTLY 4 bytes...
+		// if we do not get them we close the connection
+		return 0;
+	}
+	uint32_t message_size =
+	message_size = ntohl(*((uint32_t*)message_size_buffer));
+
+	receive_return = receive_tcp_n(socketfd, buffer, buffer_size, message_size, 2.0);
+	if(receive_return <= 0) {
+		return receive_return;
+	}
+	if(receive_return != message_size) {
+		// we are only interested in full messages
+		// if we do not get a full message we close the connection
+		return 0;
+	}
+	return receive_return;
+}
+// this is a helper function to send a length prefixed tcp message, THIS IS A BLOCKING OPERATION
+int send_tcp_message(int socketfd, char* buffer, uint32_t buffer_size, double timeout) {
+	timeout = 10000.0;
+	// first set the send connection timeout parameter
+	struct timeval send_timeout;
+	send_timeout.tv_sec = (int)timeout;
+	send_timeout.tv_usec = 0;
+	/*if(setsockopt(socketfd, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(struct timeval)) == -1) {
+		// error printing is done by the calling thread
+		return -1;
+	}*/
+	// first we need to send the size
+	uint32_t network_buffer_size = htonl(buffer_size);
+	int send_return = send(socketfd, (void*)&network_buffer_size, 4, 0);
+	if(send_return <= 0) {
+		// there was an error sending or the remote closed the connection
+		// error printing should be done by the calling thread so we just return
+		return send_return;
+	}
+	// now send the buffer
+	size_t bytes_sent = 0;
+	while(bytes_sent < buffer_size) {
+        send_return = send(socketfd, buffer + bytes_sent, buffer_size - bytes_sent, 0);
+        if(send_return <= 0) {
+            // there was an error sending or the remote closed the connection
+            // error printing should be done by the calling thread so we just return
+            return send_return;
+        }
+        bytes_sent += send_return;
+	}
+	return 1; // return 0 = remote closed socket, return -1 = error
+}
+
 void get_hex_string(const unsigned char* in_buffer, const size_t count, char* buffer, const size_t buffer_size) {
 	size_t i;
 	for(i = 0; i < count && 2 * (i + 1) < buffer_size; i++) {

@@ -56,9 +56,9 @@ void logger(log_level_t level, const char* file, const char* function, const cha
         strftime(timestamp_buffer, sizeof(timestamp_buffer), "%d.%m %T", now_local);
 
         if(level > LOG_ERROR) {
-        	printf("[%-14s %-7s %-20s %-30s] ", timestamp_buffer, "INVALID", basename(file_path_buffer), function);
+        	printf("[%-14s %-7s %-20s %-25s] ", timestamp_buffer, "INVALID", basename(file_path_buffer), function);
         } else {
-        	printf("[%-14s %-7s %-20s %-30s] ", timestamp_buffer, log_level_strings[level], basename(file_path_buffer), function);
+        	printf("[%-14s %-7s %-20s %-25s] ", timestamp_buffer, log_level_strings[level], basename(file_path_buffer), function);
         }
         vprintf(format_string, arguments);
         va_end(arguments);

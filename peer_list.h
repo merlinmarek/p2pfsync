@@ -31,6 +31,8 @@ void destroy_peer_list_lock();
 // addIpToPeer should automatically append the peer if it is not in the list
 void add_ip_to_peer(char id[6], struct sockaddr* ip_address, struct timeval last_seen);
 void remove_peer(char id[6]);
+int is_peer_in_list(char id[6]);
+int get_peer_ip_address(char id[6], struct sockaddr_storage* ip_address);
 void print_peer_list();
 void free_peer_list();
 

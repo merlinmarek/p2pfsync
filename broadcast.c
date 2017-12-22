@@ -9,8 +9,13 @@
 #include <linux/if_packet.h>
 
 #include "broadcast.h"
+#include "command_client.h"
+#include "command_server.h"
+#include "file_client.h"
+#include "file_server.h"
 #include "defines.h"
 #include "logger.h"
+#include "message_queue.h"
 #include "peer_list.h"
 #include "shutdown.h"
 #include "util.h"
@@ -25,14 +30,36 @@ typedef struct {
 	char protocol_id[8]; // has to be "P2PFSYNC"
 	unsigned char message_type; // has to be one of the MESSAGE_TYPE_... defines
 	char sender_id[6]; // has to be the sender id which is obtained by getOwnId
-} __attribute__((packed)) packet_type; // should be packed for size and small packets
+} __attribute__((packed)) packet_type; // should be packed for size and consistency across nodes
 
-void send_ipv4_broadcasts(char sender_id[6]);
+int create_broadcast_listener();
+int is_packet_valid(packet_type* packet);
+int send_available_packet(struct sockaddr* destination_address, char sender_id[6]);
+void send_ipv4_broadcast(char sender_id[6]);
 void send_ipv6_multicast(char sender_id[6]);
 void get_own_id(char buffer[6]);
-int send_available_packet(struct sockaddr* destination_address, char sender_id[6]);
-int is_packet_valid(packet_type* packet);
-int create_broadcast_listener();
+
+static message_queue_type* message_queue = NULL;
+
+void broadcast_thread_send_message(message_queue_entry_type* message) {
+	message_queue_push(message_queue, message);
+}
+
+void peer_seen(char* peer_id, struct sockaddr* peer_ip) {
+	// THIS FUNCTIONS NEEDS SOME CHECKING WHETHER SOME PEER ALREADY EXISTS
+	if(!is_peer_in_list(peer_id)) {
+        message_data_peer_seen_type peer_seen_data;
+        memset(&peer_seen_data, 0, sizeof(peer_seen_data));
+        memcpy(peer_seen_data.peer_id, peer_id, 6);
+        gettimeofday(&peer_seen_data.timestamp, NULL);
+        memcpy(&peer_seen_data.address, peer_ip, peer_ip->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
+        message_queue_entry_type* message = message_queue_create_message("peer_seen", &peer_seen_data, sizeof(peer_seen_data));
+        command_client_thread_send_message(message);
+	}
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    add_ip_to_peer(peer_id, peer_ip, now);
+}
 
 // the broadcasting thread is responsible for discovering
 // new peers and responding to discovery packets sent by other peers
@@ -40,7 +67,10 @@ int create_broadcast_listener();
 // whenever the broadcastThread discovers a new peer it should add it to the
 // peerList
 void* broadcast_thread(void* tid) {
-	LOGD("broadcastThread started\n");
+	LOGD("started\n");
+
+	// this has to be called otherwise this thread will not be able to receive any messages
+	message_queue = message_queue_create_queue();
 
 	int broadcast_listener = create_broadcast_listener();
 
@@ -63,6 +93,13 @@ void* broadcast_thread(void* tid) {
 	LOGD("listening to broadcast @ %d\n", broadcast_listener);
 
 	while(!get_shutdown()) {
+		// handle messages sent by other threads
+		message_queue_entry_type* message;
+		while((message = message_queue_pop(message_queue)) != NULL) {
+			LOGD("received message: %s\n", message->message_id);
+			message_queue_free_message(message);
+		}
+
 		if(get_passed_time(last_broadcast_discovery) > 10000.0) {
 			// we want to rebroadcast after 10 seconds are over
 			// this should probably be random so the chance for collisions is low?!
@@ -70,7 +107,16 @@ void* broadcast_thread(void* tid) {
 			// or is this automagically done by the lower layers?
 			gettimeofday(&last_broadcast_discovery, NULL); // reset the timer
             send_ipv6_multicast(own_id);
-            send_ipv4_broadcasts(own_id);
+            send_ipv4_broadcast(own_id);
+
+            struct sockaddr_in ip;
+            ip.sin_family = AF_INET;
+            ip.sin_port = htons(12345);
+            ip.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+            // this is only for testing purposes
+            peer_seen("abcdef", (struct sockaddr*)&ip);
+
 
             print_peer_list();
 		}
@@ -116,70 +162,16 @@ void* broadcast_thread(void* tid) {
             // check whether this is a discover request or an available message
             switch(packet->message_type) {
             case MESSAGE_TYPE_DISCOVER:
-            	// we want to respond to a discovery request
-            	/*logger("["); printSenderId(packet->senderId); logger("]");
-            	logger("[DISCOVERY]");
-            	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
-            	logger("\n");
-            	*/
-
+            	// here should be some peerSeen() function that can also be called by the MESSAGE_TYPE_AVAILABLE case
+            	peer_seen(packet->sender_id, (struct sockaddr*)&other_address);
             	send_available_packet((struct sockaddr*)&other_address, own_id);
             	break;
             case MESSAGE_TYPE_AVAILABLE:
-            	/*
-            	logger("["); printSenderId(packet->senderId); logger("]");
-            	logger("[AVAILABLE]");
-            	logger("["); printIpAddressFormatted((struct sockaddr*)&otherAddress); logger("]");
-            	logger("\n");
-            	*/
-
-            	; // needed because first statement after label
-
-            	// we have seen the peer just now
-            	struct timeval last_seen;
-            	gettimeofday(&last_seen, NULL);
-            	add_ip_to_peer(packet->sender_id, (struct sockaddr*)&other_address, last_seen);
-
-            	/*
-            	 * THIS DOES NOT BELONG HERE! WE NEED TO SOMEHOW SIGNAL TO THE COMMAND THREAD
-            	 * THAT THERE IS A NEW CLIENT
-            	 */
-
-            	// send our id :)
-            	//logger("trying to send\n");
-            	int commandfd = socket(other_address.ss_family, SOCK_STREAM, 0);
-            	// first we need to set the port
-            	if(other_address.ss_family == AF_INET) {
-            		// ipv4
-            		struct sockaddr_in* ipv4_address = (struct sockaddr_in*)&other_address;
-            		ipv4_address->sin_port = htons(COMMAND_LISTENER_PORT);
-            	} else {
-            		// ipv6
-            		struct sockaddr_in6* ipv6_address = (struct sockaddr_in6*)&other_address;
-            		ipv6_address->sin6_port = htons(COMMAND_LISTENER_PORT);
-            	}
-            	if(connect(commandfd, (struct sockaddr*)&other_address, other_length) != 0) {
-            		//logger("connect %s\n", strerror(errno));
-            	}
-            	const char* request = "GET /";
-            	if(send(commandfd, request, strlen(request), 0) < 0) {
-            		//logger("send %s\n", strerror(errno));
-            	}
-
-            	char buffer[8096];
-            	int asdf = recv(commandfd, buffer, 8096, 0);
-            	const char* delim = "<";
-            	buffer[asdf] = 0;
-            	char* entry = strtok(buffer, delim);
-            	LOGD("%s\n", entry);
-            	while((entry = strtok(NULL, delim)) != NULL) {
-            		LOGD("%s\n", entry);
-            	}
-
-            	close(commandfd);
-            	//logger("closed\n");
-
-
+                // THOUGHTS
+                // the broadcast thread does not need to know about the peers, only the command_thread does
+            	// the broadcast thread just sends the command_thread a message whenever a new peer is discovered
+            	// or seen again. the command thread then handles it all.
+            	peer_seen(packet->sender_id, (struct sockaddr*)&other_address);
             	break;
             default:
             	// this should never happen
@@ -193,7 +185,10 @@ void* broadcast_thread(void* tid) {
 
 	//cleanup
 	close(broadcast_listener);
-	LOGD("broadcastThread ended\n");
+	message_queue_free_queue(message_queue);
+	message_queue = NULL;
+
+	LOGD("ended\n");
 	return NULL;
 }
 
@@ -236,7 +231,7 @@ void get_own_id(char buffer[6]) {
 }
 
 // the broadcast has to be sent for every device
-void send_ipv4_broadcasts(char sender_id[6]) {
+void send_ipv4_broadcast(char sender_id[6]) {
 	int broadcast_socket = socket(AF_INET6, SOCK_DGRAM, 0);
 	if(broadcast_socket == -1) {
 		LOGD("socket %s\n", strerror(errno));

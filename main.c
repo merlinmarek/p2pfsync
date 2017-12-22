@@ -4,15 +4,17 @@
 #include <unistd.h>
 
 #include "broadcast.h"
-#include "command.h"
-#include "file_transfer.h"
+#include "command_client.h"
+#include "command_server.h"
+#include "file_client.h"
+#include "file_server.h"
 #include "logger.h"
 #include "peer_list.h"
 #include "shutdown.h"
 #include "util.h"
 
 void sigint_handler(int unused) {
-	LOGD("\nreceived SIGINT, shutting down...\n");
+	LOGD("received SIGINT, shutting down...\n");
 	set_shutdown(1);
 }
 
@@ -28,9 +30,13 @@ int main() {
 
 	set_shutdown(0); // make sure we do not shutdown right after starting
 
+	set_log_level(LOG_DEBUG);
+
 	pthread_t broadcast_thread_id;
-	pthread_t command_thread_id;
-	pthread_t file_transfer_thread_id;
+	pthread_t command_client_thread_id;
+	pthread_t command_server_thread_id;
+	pthread_t file_client_thread_id;
+	pthread_t file_server_thread_id;
 
 	int success;
 
@@ -38,11 +44,19 @@ int main() {
 	if(success != 0) {
 		LOGE("pthread_create failed with return code %d\n", success);
 	}
-	success = pthread_create(&command_thread_id, NULL, command_thread, (void*)0);
+	success = pthread_create(&command_client_thread_id, NULL, command_client_thread, (void*)0);
 	if(success != 0) {
 		LOGE("pthread_create failed with return code %d\n", success);
 	}
-	success = pthread_create(&file_transfer_thread_id, NULL, file_transfer_thread, (void*)0);
+	success = pthread_create(&command_server_thread_id, NULL, command_server_thread, (void*)0);
+	if(success != 0) {
+		LOGE("pthread_create failed with return code %d\n", success);
+	}
+	success = pthread_create(&file_client_thread_id, NULL, file_client_thread, (void*)0);
+	if(success != 0) {
+		LOGE("pthread_create failed with return code %d\n", success);
+	}
+	success = pthread_create(&file_server_thread_id, NULL, file_server_thread, (void*)0);
 	if(success != 0) {
 		LOGE("pthread_create failed with return code %d\n", success);
 	}
@@ -56,8 +70,10 @@ int main() {
 
 	// join all threads
 	pthread_join(broadcast_thread_id, NULL);
-	pthread_join(command_thread_id, NULL);
-	pthread_join(file_transfer_thread_id, NULL);
+	pthread_join(command_client_thread_id, NULL);
+	pthread_join(command_server_thread_id, NULL);
+	pthread_join(file_client_thread_id, NULL);
+	pthread_join(file_server_thread_id, NULL);
 
 	LOGD("threads are down\n");
 

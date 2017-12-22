@@ -39,6 +39,27 @@ void free_ip_address_list(ip_address_entry_type** list) {
 	}
 }
 
+int get_best_address(ip_address_entry_type** list, struct sockaddr_storage* ip_address) {
+	int found = 0;
+	ip_address_entry_type* best_ip_address_entry = NULL;
+	ip_address_entry_type* ip_address_iterator;
+	for(ip_address_iterator = *list; ip_address_iterator != NULL; ip_address_iterator = ip_address_iterator->next_entry) {
+		// if we have no ip address we take any
+		if(best_ip_address_entry == NULL) {
+			best_ip_address_entry = ip_address_iterator;
+		}
+		else if(ip_address_iterator->ip_address.ss_family == AF_INET6) {
+			best_ip_address_entry = ip_address_iterator;
+		}
+	}
+	if(best_ip_address_entry != NULL) {
+		// copy the ip address to the output variable
+		memcpy(ip_address, &best_ip_address_entry->ip_address, sizeof(struct sockaddr_storage));
+		found = 1;
+	}
+	return found;
+}
+
 void add_or_update_entry(ip_address_entry_type** list, struct sockaddr* ip_address, struct timeval last_seen) {
 	if(*list == NULL) {
 		// this is the first element

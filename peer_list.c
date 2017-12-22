@@ -84,6 +84,27 @@ void append_peer(char id[6]) {
 	peer_iterator->next_peer = peer;
 }
 
+int is_peer_in_list(char id[6]) {
+	int found = 0;
+	pthread_mutex_lock(&peer_list_lock);
+	if(find_peer(id) != NULL) {
+		found = 1;
+	}
+	pthread_mutex_unlock(&peer_list_lock);
+	return found;
+}
+
+int get_peer_ip_address(char id[6], struct sockaddr_storage* ip_address) {
+	int found = 0;
+	pthread_mutex_lock(&peer_list_lock);
+	peer_t* peer = find_peer(id);
+	if(peer != NULL) {
+		found = get_best_address(&peer->ip_address, ip_address);
+	}
+	pthread_mutex_unlock(&peer_list_lock);
+	return found;
+}
+
 void remove_peer(char id[6]) {
 	pthread_mutex_lock(&peer_list_lock);
 	if(peer_list == NULL) {
