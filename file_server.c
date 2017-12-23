@@ -11,13 +11,15 @@
 
 #include "file_server.h"
 
+// helper functions for this module
+static void handle_client(int socketfd, char* receive_buffer, size_t received_bytes);
+
+// static variables for this module
 static message_queue_type* message_queue = NULL;
 
 void file_server_thread_send_message(message_queue_entry_type* message) {
 	message_queue_push(message_queue, message);
 }
-
-void a_handle_client(int socketfd, char* receive_buffer, size_t received_bytes);
 
 void* file_server_thread(void* tid) {
 	LOGD("started\n");
@@ -85,7 +87,7 @@ void* file_server_thread(void* tid) {
             } else {
                 // this is a regular client socket that either closed the connection or wants something from us
                 char receive_buffer[1024];
-                int received_bytes = receive_tcp_message(socketfd, receive_buffer, sizeof(receive_buffer - 1), 0);
+                int received_bytes = tcp_message_receive(socketfd, receive_buffer, sizeof(receive_buffer - 1), 0);
                 if(received_bytes == -1) {
                     // error on recv
                     // if this happens we want to close this socket and remove it from the master_fds
@@ -100,7 +102,7 @@ void* file_server_thread(void* tid) {
                     continue;
                 }
                 FD_CLR(socketfd, &master_read_set);
-                a_handle_client(socketfd, receive_buffer, received_bytes);
+                handle_client(socketfd, receive_buffer, received_bytes);
                 close(socketfd);
             }
 		}
@@ -113,7 +115,7 @@ void* file_server_thread(void* tid) {
 	return NULL;
 }
 
-void a_handle_client(int socketfd, char* receive_buffer, size_t received_bytes) {
+void handle_client(int socketfd, char* receive_buffer, size_t received_bytes) {
     receive_buffer[received_bytes] = ' '; // for strtok
     const char* delim = " ";
     const char* request_id = strtok(receive_buffer, delim);
@@ -133,7 +135,7 @@ void a_handle_client(int socketfd, char* receive_buffer, size_t received_bytes) 
     	LOGD("not a file: %s\n", local_path);
     	char reply[1000];
         strcpy(reply, "requested invalid directory");
-        if(send_tcp_message(socketfd, reply, strlen(reply), 2.0) <= 0) {
+        if(tcp_message_send(socketfd, reply, strlen(reply), 2.0) <= 0) {
             LOGD("send %s\n", strerror(errno));
         }
     }
@@ -154,7 +156,7 @@ void a_handle_client(int socketfd, char* receive_buffer, size_t received_bytes) 
         }
         // the file is in memory now
         //LOGD("sending %s\n", file_buffer);
-        if(send_tcp_message(socketfd, file_buffer, info.st_size, 20.0) <= 0) {
+        if(tcp_message_send(socketfd, file_buffer, info.st_size, 20.0) <= 0) {
         	LOGD("send_tcp_message failed\n");
         }
     }

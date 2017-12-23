@@ -4,9 +4,9 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <netinet/in.h>
 
 #include "defines.h"
 #include "file_client.h"
@@ -17,14 +17,15 @@
 
 #include "command_server.h"
 
+// helper functions for this module
+static void handle_client(int socketfd, char* receive_buffer, int received_bytes);
+
+// static variables for this module
 static message_queue_type* message_queue = NULL;
 
 void command_server_thread_send_message(message_queue_entry_type* message) {
 	message_queue_push(message_queue, message);
 }
-
-// helper functions for this module
-void handle_client(int socketfd, char* receive_buffer, int received_bytes);
 
 void* command_server_thread(void* tid) {
 	LOGD("started\n");
@@ -87,7 +88,7 @@ void* command_server_thread(void* tid) {
 	    		} else {
 	    			// this is a regular client socket that either closed the connection or wants something from us
                     char receive_buffer[1024];
-                    int received_bytes = receive_tcp_message(socketfd, receive_buffer, sizeof(receive_buffer - 1), 5.0);
+                    int received_bytes = tcp_message_receive(socketfd, receive_buffer, sizeof(receive_buffer - 1), 5.0);
                     if(received_bytes == -1) {
                     	// error on recv
                     	// if this happens we want to close this socket and remove it from the master_fds
@@ -189,7 +190,7 @@ void handle_client(int socketfd, char* receive_buffer, int received_bytes) {
         reply[current_pos] = 0; // end of string instead of <
         //LOGD("sending %s\n", reply);
     }
-    if(send_tcp_message(socketfd, reply, strlen(reply), 2.0) <= 0) {
+    if(tcp_message_send(socketfd, reply, strlen(reply), 2.0) <= 0) {
     	LOGD("send %s\n", strerror(errno));
     }
     free(local_path);

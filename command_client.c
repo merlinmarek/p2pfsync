@@ -4,9 +4,9 @@
 #define __USE_XOPEN
 #include <time.h> // __USE_XOPEN is needed otherwise strptime is not defined
 #include <unistd.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <netinet/in.h>
 
 #include "defines.h"
 #include "file_client.h"
@@ -16,11 +16,12 @@
 
 #include "command_client.h"
 
-static message_queue_type* message_queue = NULL;
-
 // helper functions for this module
-void download_remote_directory(const int socketfd, const struct sockaddr* remote_address, const char* path);
-void print_peer_seen_data(message_data_peer_seen_type* message_data);
+static void download_remote_directory(const int socketfd, const struct sockaddr* remote_address, const char* path);
+static void print_peer_seen_data(message_data_peer_seen_type* message_data);
+
+// static variables for this module
+static message_queue_type* message_queue = NULL;
 
 void command_client_thread_send_message(message_queue_entry_type* message) {
 	message_queue_push(message_queue, message);
@@ -63,17 +64,6 @@ void* command_client_thread(void* tid) {
 	return NULL;
 }
 
-void print_peer_seen_data(message_data_peer_seen_type* message_data) {
-    char id_buffer[13];
-    get_hex_string((unsigned char*)message_data->peer_id, 6, id_buffer, sizeof(id_buffer));
-    char ip_buffer[128];
-    get_ip_address_formatted((struct sockaddr*)&message_data->address, ip_buffer, sizeof(ip_buffer));
-    char date_buffer[128];
-    strftime(date_buffer, sizeof(date_buffer), "%d.%m.%G %a %T", localtime(&message_data->timestamp.tv_sec));
-    LOGD("\tid: %s, ip: %s, seen: %s\n", id_buffer, ip_buffer, date_buffer);
-
-}
-
 void download_remote_directory(const int socketfd, const struct sockaddr* remote_address, const char* path) {
 	char request_buffer[PATH_MAX];
 	memset(request_buffer, 0, sizeof(request_buffer));
@@ -82,13 +72,14 @@ void download_remote_directory(const int socketfd, const struct sockaddr* remote
 	strcpy(request_buffer, "GET ");
 	strcat(request_buffer, path);
 
-	size_t sent_bytes = send_tcp_message(socketfd, request_buffer, strlen(request_buffer), 0);
+	size_t sent_bytes = tcp_message_send(socketfd, request_buffer, strlen(request_buffer), 0);
     if(sent_bytes < 0) {
         LOGE("send %s\n", strerror(errno));
         return;
     }
+    // this buffer size should be big enough to hold all files in a directory, this should probably be dynamic
     char receive_buffer[8096 * 8];
-    int received_bytes = receive_tcp_message(socketfd, receive_buffer, sizeof(receive_buffer), 2.0);
+    int received_bytes = tcp_message_receive(socketfd, receive_buffer, sizeof(receive_buffer), 2.0);
     const char* delim = "<";
     receive_buffer[received_bytes] = 0;
     char* entry_token = NULL;
@@ -153,7 +144,15 @@ void download_remote_directory(const int socketfd, const struct sockaddr* remote
         }
         entry = strtok_r(NULL, delim, &entry_token);
     }
-
-
 }
 
+void print_peer_seen_data(message_data_peer_seen_type* message_data) {
+    char id_buffer[13];
+    get_hex_string((unsigned char*)message_data->peer_id, 6, id_buffer, sizeof(id_buffer));
+    char ip_buffer[128];
+    get_ip_address_string_prefixed((struct sockaddr*)&message_data->address, ip_buffer, sizeof(ip_buffer));
+    char date_buffer[128];
+    strftime(date_buffer, sizeof(date_buffer), "%d.%m.%G %a %T", localtime(&message_data->timestamp.tv_sec));
+    LOGD("\tid: %s, ip: %s, seen: %s\n", id_buffer, ip_buffer, date_buffer);
+
+}

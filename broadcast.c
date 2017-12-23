@@ -8,17 +8,15 @@
 #include <arpa/inet.h>
 #include <linux/if_packet.h>
 
-#include "broadcast.h"
 #include "command_client.h"
-#include "command_server.h"
-#include "file_client.h"
-#include "file_server.h"
 #include "defines.h"
 #include "logger.h"
 #include "message_queue.h"
 #include "peer_list.h"
 #include "shutdown.h"
 #include "util.h"
+
+#include "broadcast.h"
 
 #define BROADCAST_LISTENER_PORT 		44700
 #define BROADCAST_LISTENER_PORT_STRING	"44700"
@@ -32,33 +30,20 @@ typedef struct {
 	char sender_id[6]; // has to be the sender id which is obtained by getOwnId
 } __attribute__((packed)) packet_type; // should be packed for size and consistency across nodes
 
-int create_broadcast_listener();
-int is_packet_valid(packet_type* packet);
-int send_available_packet(struct sockaddr* destination_address, char sender_id[6]);
-void send_ipv4_broadcast(char sender_id[6]);
-void send_ipv6_multicast(char sender_id[6]);
-void get_own_id(char buffer[6]);
+// helper functions should be static so they are not visible outside of this module
+static int create_broadcast_listener();
+static void get_own_id(char buffer[6]);
+static int is_packet_valid(packet_type* packet);
+static void peer_seen(char* peer_id, struct sockaddr* peer_ip);
+static int send_available_packet(struct sockaddr* destination_address, char sender_id[6]);
+static void send_ipv4_broadcast(char sender_id[6]);
+static void send_ipv6_multicast(char sender_id[6]);
 
+// static variables for this module
 static message_queue_type* message_queue = NULL;
 
 void broadcast_thread_send_message(message_queue_entry_type* message) {
 	message_queue_push(message_queue, message);
-}
-
-void peer_seen(char* peer_id, struct sockaddr* peer_ip) {
-	// THIS FUNCTIONS NEEDS SOME CHECKING WHETHER SOME PEER ALREADY EXISTS
-	if(!is_peer_in_list(peer_id)) {
-        message_data_peer_seen_type peer_seen_data;
-        memset(&peer_seen_data, 0, sizeof(peer_seen_data));
-        memcpy(peer_seen_data.peer_id, peer_id, 6);
-        gettimeofday(&peer_seen_data.timestamp, NULL);
-        memcpy(&peer_seen_data.address, peer_ip, peer_ip->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
-        message_queue_entry_type* message = message_queue_create_message("peer_seen", &peer_seen_data, sizeof(peer_seen_data));
-        command_client_thread_send_message(message);
-	}
-    struct timeval now;
-    gettimeofday(&now, NULL);
-    add_ip_to_peer(peer_id, peer_ip, now);
 }
 
 // the broadcasting thread is responsible for discovering
@@ -100,15 +85,15 @@ void* broadcast_thread(void* tid) {
 			message_queue_free_message(message);
 		}
 
-		if(get_passed_time(last_broadcast_discovery) > 10000.0) {
+		if(get_passed_time(last_broadcast_discovery) > 10.0) {
 			// we want to rebroadcast after 10 seconds are over
 			// this should probably be random so the chance for collisions is low?!
 			// should this be something I need to think about with a layer 4 protocol like udp
 			// or is this automagically done by the lower layers?
 			gettimeofday(&last_broadcast_discovery, NULL); // reset the timer
-            //send_ipv6_multicast(own_id);
+            send_ipv6_multicast(own_id);
             send_ipv4_broadcast(own_id);
-            //LOGD("sending broadcast discovery\n");
+            LOGD("sending broadcast discovery\n");
 
             struct sockaddr_in ip;
             ip.sin_family = AF_INET;
@@ -192,6 +177,76 @@ void* broadcast_thread(void* tid) {
 	return NULL;
 }
 
+// we cannot use the socketUtil functions for this because in case we get
+// an ipv6 socket we have to join the multicast group as well
+int create_broadcast_listener() {
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_flags = AI_PASSIVE;
+	struct addrinfo* result_list;
+	int success = getaddrinfo(NULL, BROADCAST_LISTENER_PORT_STRING, &hints, &result_list);
+	if(success != 0) {
+		LOGD("getaddrinfo: %s\n", gai_strerror(success));
+		return -1;
+	}
+
+	int listener_socket = -1;
+	struct addrinfo* iterator;
+
+	for(iterator = result_list; iterator != NULL; iterator = iterator->ai_next) {
+		// first try to get IPv6 address
+		if(iterator->ai_family != AF_INET6) {
+			continue;
+		}
+		listener_socket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
+		if(listener_socket == -1) {
+			LOGD("socket: %s\n", strerror(errno));
+			continue;
+		}
+		if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
+			LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
+			continue;
+		}
+		// try to join the ipv6 multicast group
+		if(bind(listener_socket, iterator->ai_addr, iterator->ai_addrlen) == 0) {
+            // join membership
+            struct ipv6_mreq group;
+            group.ipv6mr_interface = 0;
+            inet_pton(AF_INET6, IPV6_MULTICAST_ADDRESS, &group.ipv6mr_multiaddr);
+            if(setsockopt(listener_socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &group, sizeof(group)) == -1) {
+            	LOGD("setsockopt %s\n", strerror(errno));
+            }
+			break;
+		}
+		close(listener_socket);
+		listener_socket = -1;
+	}
+	if(listener_socket == -1) {
+		LOGD("no ipv6 listener could be created, trying for ipv4 instead\n");
+		// try to get ipv4 instead
+		for(iterator = result_list; iterator != NULL; iterator = iterator->ai_next) {
+			if(iterator->ai_family != AF_INET) {
+				continue;
+			}
+			listener_socket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
+			if(listener_socket == -1) {
+				LOGD("socket: %s\n", strerror(errno));
+				continue;
+			}
+			if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
+				LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
+			}
+			if(bind(listener_socket, iterator->ai_addr, iterator->ai_addrlen) == 0) {
+				break;
+			}
+			close(listener_socket);
+			listener_socket = -1;
+		}
+	}
+	return listener_socket;
+}
 
 void get_own_id(char buffer[6]) {
 	struct ifaddrs* interface_list;
@@ -228,6 +283,64 @@ void get_own_id(char buffer[6]) {
 			buffer[i] = rand() & 0xFF;
 		}
 	}
+}
+
+int is_packet_valid(packet_type* packet) {
+	if(memcmp(packet->protocol_id, "P2PFSYNC", 8) != 0) {
+		return 0;
+	}
+	switch((unsigned int)(packet->message_type)) {
+	case MESSAGE_TYPE_DISCOVER:
+		break;
+	case MESSAGE_TYPE_AVAILABLE:
+		break;
+	default:
+		return 0;
+		break;
+	}
+	return 1;
+}
+
+void peer_seen(char* peer_id, struct sockaddr* peer_ip) {
+	if(!is_peer_in_list(peer_id)) {
+        message_data_peer_seen_type peer_seen_data;
+        memset(&peer_seen_data, 0, sizeof(peer_seen_data));
+        memcpy(peer_seen_data.peer_id, peer_id, 6);
+        gettimeofday(&peer_seen_data.timestamp, NULL);
+        memcpy(&peer_seen_data.address, peer_ip, peer_ip->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
+        message_queue_entry_type* message = message_queue_create_message("peer_seen", &peer_seen_data, sizeof(peer_seen_data));
+        command_client_thread_send_message(message);
+	}
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    add_ip_to_peer(peer_id, peer_ip, now);
+}
+
+int send_available_packet(struct sockaddr* destination_address, char sender_id[6]) {
+	packet_type packet;
+	memset(&packet, 0, sizeof(packet_type));
+	memcpy(packet.protocol_id, "P2PFSYNC", 8);
+	packet.message_type = MESSAGE_TYPE_AVAILABLE;
+	memcpy(packet.sender_id, sender_id, 6);
+
+	int sender_socket = socket(destination_address->sa_family, SOCK_DGRAM, 0);
+	if(sender_socket == -1) {
+		LOGD("socket: %s\n", strerror(errno));
+		return -1;
+	}
+    if(destination_address->sa_family == AF_INET6) {
+        ((struct sockaddr_in6*)destination_address)->sin6_port = htons(BROADCAST_LISTENER_PORT);
+    } else if(destination_address->sa_family == AF_INET) {
+        ((struct sockaddr_in*)destination_address)->sin_port = htons(BROADCAST_LISTENER_PORT);
+    }
+
+	socklen_t destinationAddressSize = destination_address->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+	if(sendto(sender_socket, &packet, sizeof(packet), 0, destination_address, destinationAddressSize) == -1) {
+		LOGD("sendto: %s\n", strerror(errno));
+		return -1;
+	}
+	//logger("sent an available packet\n");
+	return 0;
 }
 
 // the broadcast has to be sent for every device
@@ -301,118 +414,4 @@ void send_ipv6_multicast(char sender_id[6]) {
 	if(sendto(multicast_socket, &packet, sizeof(packet), 0, (struct sockaddr*)&ipv6_address, sizeof(ipv6_address)) == -1) {
 		LOGD("sendto: %s\n", strerror(errno));
 	}
-}
-
-int send_available_packet(struct sockaddr* destination_address, char sender_id[6]) {
-	packet_type packet;
-	memset(&packet, 0, sizeof(packet_type));
-	memcpy(packet.protocol_id, "P2PFSYNC", 8);
-	packet.message_type = MESSAGE_TYPE_AVAILABLE;
-	memcpy(packet.sender_id, sender_id, 6);
-
-	int sender_socket = socket(destination_address->sa_family, SOCK_DGRAM, 0);
-	if(sender_socket == -1) {
-		LOGD("socket: %s\n", strerror(errno));
-		return -1;
-	}
-    if(destination_address->sa_family == AF_INET6) {
-        ((struct sockaddr_in6*)destination_address)->sin6_port = htons(BROADCAST_LISTENER_PORT);
-    } else if(destination_address->sa_family == AF_INET) {
-        ((struct sockaddr_in*)destination_address)->sin_port = htons(BROADCAST_LISTENER_PORT);
-    }
-
-	socklen_t destinationAddressSize = destination_address->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
-	if(sendto(sender_socket, &packet, sizeof(packet), 0, destination_address, destinationAddressSize) == -1) {
-		LOGD("sendto: %s\n", strerror(errno));
-		return -1;
-	}
-	//logger("sent an available packet\n");
-	return 0;
-}
-
-int is_packet_valid(packet_type* packet) {
-	if(memcmp(packet->protocol_id, "P2PFSYNC", 8) != 0) {
-		return 0;
-	}
-	switch((unsigned int)(packet->message_type)) {
-	case MESSAGE_TYPE_DISCOVER:
-		break;
-	case MESSAGE_TYPE_AVAILABLE:
-		break;
-	default:
-		return 0;
-		break;
-	}
-	return 1;
-}
-
-// we cannot use the socketUtil functions for this because in case we get
-// an ipv6 socket we have to join the multicast group as well
-int create_broadcast_listener() {
-	struct addrinfo hints;
-	memset(&hints, 0, sizeof(struct addrinfo));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_flags = AI_PASSIVE;
-	struct addrinfo* result_list;
-	int success = getaddrinfo(NULL, BROADCAST_LISTENER_PORT_STRING, &hints, &result_list);
-	if(success != 0) {
-		LOGD("getaddrinfo: %s\n", gai_strerror(success));
-		return -1;
-	}
-
-	int listener_socket = -1;
-	struct addrinfo* iterator;
-
-	for(iterator = result_list; iterator != NULL; iterator = iterator->ai_next) {
-		// first try to get IPv6 address
-		if(iterator->ai_family != AF_INET6) {
-			continue;
-		}
-		listener_socket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
-		if(listener_socket == -1) {
-			LOGD("socket: %s\n", strerror(errno));
-			continue;
-		}
-		if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
-			LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
-			continue;
-		}
-		// try to join the ipv6 multicast group
-		if(bind(listener_socket, iterator->ai_addr, iterator->ai_addrlen) == 0) {
-            // join membership
-            struct ipv6_mreq group;
-            group.ipv6mr_interface = 0;
-            inet_pton(AF_INET6, IPV6_MULTICAST_ADDRESS, &group.ipv6mr_multiaddr);
-            if(setsockopt(listener_socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &group, sizeof(group)) == -1) {
-            	LOGD("setsockopt %s\n", strerror(errno));
-            }
-			break;
-		}
-		close(listener_socket);
-		listener_socket = -1;
-	}
-	if(listener_socket == -1) {
-		LOGD("no ipv6 listener could be created, trying for ipv4 instead\n");
-		// try to get ipv4 instead
-		for(iterator = result_list; iterator != NULL; iterator = iterator->ai_next) {
-			if(iterator->ai_family != AF_INET) {
-				continue;
-			}
-			listener_socket = socket(iterator->ai_family, iterator->ai_socktype, iterator->ai_protocol);
-			if(listener_socket == -1) {
-				LOGD("socket: %s\n", strerror(errno));
-				continue;
-			}
-			if (setsockopt(listener_socket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
-				LOGD("setsockopt(SO_REUSEADDR) failed: %s\n", strerror(errno));
-			}
-			if(bind(listener_socket, iterator->ai_addr, iterator->ai_addrlen) == 0) {
-				break;
-			}
-			close(listener_socket);
-			listener_socket = -1;
-		}
-	}
-	return listener_socket;
 }

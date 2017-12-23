@@ -99,7 +99,7 @@ void print_ip_address_list(ip_address_entry_type** list) {
 		// format is
 		// \t[ipversion ip]
 		char ip_buffer[128];
-		get_ip_address_formatted((struct sockaddr*)&ip_address_iterator->ip_address, ip_buffer, sizeof(ip_buffer));
+		get_ip_address_string_prefixed((struct sockaddr*)&ip_address_iterator->ip_address, ip_buffer, sizeof(ip_buffer));
 		LOGD("\t[%s]\n", ip_buffer);
 	}
 }
