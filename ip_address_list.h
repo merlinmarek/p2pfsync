@@ -16,7 +16,6 @@ void add_or_update_entry(ip_address_entry_type** list, struct sockaddr* ip_addre
 // this prefers ipv6 addresses over ipv4
 // if no address is found it returns 0 otherwise 1
 int get_best_address(ip_address_entry_type** list, struct sockaddr_storage* ip_address);
-// passing the ip address by ** is not really necessary for printIpAddressList but it is more
 // convenient if list is always **
 void print_ip_address_list(ip_address_entry_type** list);
 

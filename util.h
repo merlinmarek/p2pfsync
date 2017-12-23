@@ -18,4 +18,7 @@ int receive_tcp_message(int socketfd, char* buffer, size_t buffer_size, double t
 // this is a helper function to send a length prefixed tcp message, THIS IS A BLOCKING OPERATION
 int send_tcp_message(int socketfd, char* buffer, uint32_t buffer_size, double timeout);
 
+
+int connect_with_timeout(const struct sockaddr* address, unsigned short port, int timeout_seconds);
+
 #endif

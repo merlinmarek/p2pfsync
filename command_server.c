@@ -33,9 +33,14 @@ void* command_server_thread(void* tid) {
 	message_queue = message_queue_create_queue();
 
 	int listener_socket = create_tcp_listener(COMMAND_LISTENER_PORT_STRING);
+	if(listener_socket == -1) {
+		LOGD("create_tcp_listener failed\n");
+	}
 	if(listen(listener_socket, 10) != 0) {
 		LOGD("listen %s\n", strerror(errno));
 	}
+
+	LOGD("command server listenening @ %d\n", listener_socket);
 
 	fd_set master_read_set;
 	FD_ZERO(&master_read_set);
@@ -125,7 +130,7 @@ void handle_client(int socketfd, char* receive_buffer, int received_bytes) {
     char* local_path = malloc(strlen(BASE_PATH) + strlen(request_path) + 1);
     memcpy(local_path, BASE_PATH, strlen(BASE_PATH));
     strcpy(local_path + strlen(BASE_PATH), request_path);
-    LOGD("id: %s, path: %s\n", request_id, local_path);
+    //LOGD("id: %s, path: %s\n", request_id, local_path);
 
     // now we enumerate files in the requested directory and return them as csv
     char reply[8096 * 8];
@@ -182,7 +187,7 @@ void handle_client(int socketfd, char* receive_buffer, int received_bytes) {
             reply[current_pos++] = '<'; // delimiter between file
         }
         reply[current_pos] = 0; // end of string instead of <
-        LOGD("sending %s\n", reply);
+        //LOGD("sending %s\n", reply);
     }
     if(send_tcp_message(socketfd, reply, strlen(reply), 2.0) <= 0) {
     	LOGD("send %s\n", strerror(errno));

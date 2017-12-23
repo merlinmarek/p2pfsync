@@ -1,6 +1,8 @@
+#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 
+#include "defines.h"
 #include "logger.h"
 #include "shutdown.h"
 #include "util.h"
@@ -12,6 +14,9 @@ static message_queue_type* message_queue = NULL;
 void file_client_thread_send_message(message_queue_entry_type* message) {
 	message_queue_push(message_queue, message);
 }
+
+// helper functions
+void download_file(struct sockaddr* address, const char* file_path);
 
 void* file_client_thread(void* tid) {
 	LOGD("started\n");
@@ -26,10 +31,7 @@ void* file_client_thread(void* tid) {
 				// extract the download_file_data from the message
 				message_data_download_file_type* download_file_data = (message_data_download_file_type*)message->arguments;
 
-				char ip_buffer[128];
-				get_ip_address_formatted((struct sockaddr*)&download_file_data->address, ip_buffer, sizeof(ip_buffer));
-
-				LOGI("downloading %s from %s\n", download_file_data->file_path, ip_buffer);
+				download_file((struct sockaddr*)&download_file_data->address, download_file_data->file_path);
 			}
 			else {
 				LOGD("unkown message id :(\n");
@@ -44,4 +46,45 @@ void* file_client_thread(void* tid) {
 	message_queue = NULL;
 	LOGD("ended\n");
 	return NULL;
+}
+
+void download_file(struct sockaddr* address, const char* file_path) {
+    char ip_buffer[128];
+    get_ip_address_formatted(address, ip_buffer, sizeof(ip_buffer));
+    LOGI("downloading %s from %s\n", file_path, ip_buffer);
+
+    // create a tcp connection to the remote
+    int socketfd = connect_with_timeout(address, FILE_LISTENER_PORT, 5);
+    if(socketfd == -1) {
+    	LOGE("connect_with_timeout failed\n");
+    	return;
+    }
+    // the request should look like GET <path>
+    char request_buffer[PATH_MAX];
+    strcpy(request_buffer, "GET ");
+    strcat(request_buffer, file_path);
+    int send_return = send_tcp_message(socketfd, request_buffer, strlen(request_buffer), 5.0);
+    if(send_return <= 0) {
+    	LOGE("send_tcp_message failed\n");
+    	close(socketfd);
+    	return;
+    }
+    // maximum 20mb file for now...
+    char* file_buffer = (char*)malloc(20000000);
+    if(file_buffer == NULL) {
+    	LOGE("out of memory :/\n");
+    	close(socketfd);
+    	return;
+    }
+    int recv_return = receive_tcp_message(socketfd, file_buffer, 20000000, 20000.0);
+    if(recv_return <= 0) {
+    	LOGE("receive_tcp_message failed\n");
+    	close(socketfd);
+    	free(file_buffer);
+    	return;
+    }
+    // we should have the remote file in memory now
+    LOGI("remote file: %s has contents: %*.*s", file_path, 0, recv_return, file_buffer);
+    close(socketfd);
+    free(file_buffer);
 }

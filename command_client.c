@@ -19,7 +19,6 @@
 static message_queue_type* message_queue = NULL;
 
 // helper functions for this module
-int connect_with_timeout(const struct sockaddr* address, int timeout_seconds);
 void download_remote_directory(const int socketfd, const struct sockaddr* remote_address, const char* path);
 void print_peer_seen_data(message_data_peer_seen_type* message_data);
 
@@ -40,7 +39,7 @@ void* command_client_thread(void* tid) {
 				// extract the peer_seen data from the message
 				message_data_peer_seen_type* peer_seen_data = (message_data_peer_seen_type*)message->arguments;
 				print_peer_seen_data(peer_seen_data);
-				int commandfd = connect_with_timeout((struct sockaddr*)&peer_seen_data->address, 5);
+				int commandfd = connect_with_timeout((struct sockaddr*)&peer_seen_data->address, COMMAND_LISTENER_PORT, 5);
 				if(commandfd == -1) {
 					// the connection failed
 					// continue with the next message
@@ -137,10 +136,10 @@ void download_remote_directory(const int socketfd, const struct sockaddr* remote
 
             	struct stat info;
             	memset(&info, 0, sizeof(info));
-            	if(!lstat(request_buffer, &info) != 0 || !S_ISREG(info.st_mode)) {
+            	if(lstat(request_buffer, &info) != 0 || !S_ISREG(info.st_mode)) {
             		// not found or not a file
             		// so we need to download it
-            		LOGE("file not present: %s\n", request_buffer);
+            		LOGI("file not present: %s\n", request_buffer);
             		// create a download job for the file
             		// now the path has to be again relative to BASE_PATH
                     message_data_download_file_type download_file_data;
@@ -158,67 +157,3 @@ void download_remote_directory(const int socketfd, const struct sockaddr* remote
 
 }
 
-int connect_with_timeout(const struct sockaddr* address, int timeout_seconds) {
-    // first we need to set the port
-    if(address->sa_family == AF_INET) {
-        // ipv4
-        struct sockaddr_in* ipv4_address = (struct sockaddr_in*)address;
-        ipv4_address->sin_port = htons(COMMAND_LISTENER_PORT);
-    } else {
-        // ipv6
-        struct sockaddr_in6* ipv6_address = (struct sockaddr_in6*)address;
-        ipv6_address->sin6_port = htons(COMMAND_LISTENER_PORT);
-    }
-
-    // now we create a non-blocking socket
-    int commandfd = socket(address->sa_family, SOCK_STREAM, 0);
-
-    if(fcntl(commandfd, F_SETFL, fcntl(commandfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
-        LOGE("fcntl set O_NONBLOCK\n");
-        return -1;
-    }
-
-    int connect_return = connect(commandfd, address, address->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
-    if(errno != EINPROGRESS && connect_return != 0) {
-        LOGE("connect %s\n", strerror(errno));
-        return -1;
-    }
-
-    fd_set write_set;
-    FD_ZERO(&write_set);
-    FD_SET(commandfd, &write_set);
-    struct timeval timeout;
-    timeout.tv_sec = timeout_seconds;
-    timeout.tv_usec = 0;
-    int select_return = select(commandfd + 1, NULL, &write_set, NULL, &timeout);
-    if(select_return == -1) {
-        // error
-        LOGE("select %s\n", strerror(errno));
-        return -1;
-    }
-    else if(select_return == 0) {
-    	// timeout
-        LOGD("connection attempt timed out\n");
-        return -1;
-    }
-    else {
-        // not timed out
-        socklen_t lon = sizeof(int);
-        int valopt;
-        if (getsockopt(commandfd, SOL_SOCKET, SO_ERROR, (void*)(&valopt), &lon) < 0) {
-            LOGE("getsockopt() %s\n", strerror(errno));
-            return -1;
-        }
-        if (valopt) {
-            LOGE("error in delayed connection %s\n", strerror(valopt));
-            return -1;
-        }
-        // connection established successfully
-        // remove the O_NONBLOCK, otherwise all function calls fail
-        if(fcntl(commandfd, F_SETFL, ~fcntl(commandfd, F_GETFL, 0) & O_NONBLOCK) == -1) {
-            LOGE("fcntl clear O_NONBLOCK\n");
-            return -1;
-        }
-    }
-    return commandfd;
-}

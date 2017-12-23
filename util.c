@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
@@ -13,8 +14,21 @@
 #include "util.h"
 
 // another helper function to receive exactly n bytes of a tcp stream with a timeout used by receive_tcp_message
+/*
+ *
+ *
+ * THE TIMEOUT NEEDS FIXING
+ * THE TIMEOUT NEEDS FIXING
+ * THE TIMEOUT NEEDS FIXING
+ * THE TIMEOUT NEEDS FIXING
+ * THE TIMEOUT NEEDS FIXING
+ * THE TIMEOUT NEEDS FIXING
+ * THE TIMEOUT NEEDS FIXING
+ * THE TIMEOUT NEEDS FIXING
+ *
+ *
+ */
 int receive_tcp_n(int socketfd, char* buffer, size_t buffer_size, size_t n, double timeout) {
-	timeout = 1000.0;
 	// receive timeout will be handled with select
 	// and a timer
 	struct timeval start_time;
@@ -34,14 +48,14 @@ int receive_tcp_n(int socketfd, char* buffer, size_t buffer_size, size_t n, doub
 		int select_return = select(socketfd + 1, &read_set, NULL, NULL, &select_timeout);
 		if(select_return == -1) {
 			// on select
-			LOGD("spacken\n");
+			LOGE("select %s\n", strerror(errno));
 			return select_return;
 		}
 		double passed_time = get_passed_time(start_time);
         if(passed_time/1000.0 > timeout) {
             // timeout
-			LOGD("kanacken\n");
-            return select_return;
+        	//LOGD("select timedout\n");
+            //return select_return;
         }
 		// maybe the socket is ready :)
 		if(FD_ISSET(socketfd, &read_set)) {
@@ -60,14 +74,13 @@ int receive_tcp_n(int socketfd, char* buffer, size_t buffer_size, size_t n, doub
 
 // this is a helper function to receive a length prefixed tcp message with a maximum length and a timeout, THIS IS A BLOCKING OPERATION
 int receive_tcp_message(int socketfd, char* buffer, size_t buffer_size, double timeout) {
-	timeout = 10000.0;
 	// receive timeout will be handled with select
 	// and a timer
 	struct timeval start_time;
 	gettimeofday(&start_time, NULL);
 
 	char message_size_buffer[4];
-	int receive_return = receive_tcp_n(socketfd, message_size_buffer, sizeof(message_size_buffer), 4, 10.0);
+	int receive_return = receive_tcp_n(socketfd, message_size_buffer, sizeof(message_size_buffer), 4, timeout);
 	if(receive_return <= 0) {
 		return receive_return;
 	}
@@ -261,4 +274,69 @@ int is_ipv4_mapped(struct sockaddr* address) {
 		return 1;
 	}
 	return 0;
+}
+
+int connect_with_timeout(const struct sockaddr* address, unsigned short port, int timeout_seconds) {
+    // first we need to set the port
+    if(address->sa_family == AF_INET) {
+        // ipv4
+        struct sockaddr_in* ipv4_address = (struct sockaddr_in*)address;
+        ipv4_address->sin_port = htons(port);
+    } else {
+        // ipv6
+        struct sockaddr_in6* ipv6_address = (struct sockaddr_in6*)address;
+        ipv6_address->sin6_port = htons(port);
+    }
+
+    // now we create a non-blocking socket
+    int commandfd = socket(address->sa_family, SOCK_STREAM, 0);
+
+    if(fcntl(commandfd, F_SETFL, fcntl(commandfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
+        LOGE("fcntl set O_NONBLOCK\n");
+        return -1;
+    }
+
+    int connect_return = connect(commandfd, address, address->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
+    if(errno != EINPROGRESS && connect_return != 0) {
+        LOGE("connect %s\n", strerror(errno));
+        return -1;
+    }
+
+    fd_set write_set;
+    FD_ZERO(&write_set);
+    FD_SET(commandfd, &write_set);
+    struct timeval timeout;
+    timeout.tv_sec = timeout_seconds;
+    timeout.tv_usec = 0;
+    int select_return = select(commandfd + 1, NULL, &write_set, NULL, &timeout);
+    if(select_return == -1) {
+        // error
+        LOGE("select %s\n", strerror(errno));
+        return -1;
+    }
+    else if(select_return == 0) {
+    	// timeout
+        LOGD("connection attempt timed out\n");
+        return -1;
+    }
+    else {
+        // not timed out
+        socklen_t lon = sizeof(int);
+        int valopt;
+        if (getsockopt(commandfd, SOL_SOCKET, SO_ERROR, (void*)(&valopt), &lon) < 0) {
+            LOGE("getsockopt() %s\n", strerror(errno));
+            return -1;
+        }
+        if (valopt) {
+            LOGE("error in delayed connection %s\n", strerror(valopt));
+            return -1;
+        }
+        // connection established successfully
+        // remove the O_NONBLOCK, otherwise all function calls fail
+        if(fcntl(commandfd, F_SETFL, ~fcntl(commandfd, F_GETFL, 0) & O_NONBLOCK) == -1) {
+            LOGE("fcntl clear O_NONBLOCK\n");
+            return -1;
+        }
+    }
+    return commandfd;
 }

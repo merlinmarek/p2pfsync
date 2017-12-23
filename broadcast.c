@@ -106,8 +106,9 @@ void* broadcast_thread(void* tid) {
 			// should this be something I need to think about with a layer 4 protocol like udp
 			// or is this automagically done by the lower layers?
 			gettimeofday(&last_broadcast_discovery, NULL); // reset the timer
-            send_ipv6_multicast(own_id);
+            //send_ipv6_multicast(own_id);
             send_ipv4_broadcast(own_id);
+            //LOGD("sending broadcast discovery\n");
 
             struct sockaddr_in ip;
             ip.sin_family = AF_INET;
@@ -115,10 +116,9 @@ void* broadcast_thread(void* tid) {
             ip.sin_addr.s_addr = inet_addr("127.0.0.1");
 
             // this is only for testing purposes
-            peer_seen("abcdef", (struct sockaddr*)&ip);
+            //peer_seen("abcdef", (struct sockaddr*)&ip);
 
-
-            print_peer_list();
+            //print_peer_list();
 		}
 
 	    fd_set read_set = master_set;
