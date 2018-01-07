@@ -72,7 +72,7 @@ void download_remote_directory(const int socketfd, const struct sockaddr* remote
 	strcpy(request_buffer, "GET ");
 	strcat(request_buffer, path);
 
-	size_t sent_bytes = tcp_message_send(socketfd, request_buffer, strlen(request_buffer), 0);
+	int sent_bytes = tcp_message_send(socketfd, request_buffer, strlen(request_buffer), 0);
     if(sent_bytes < 0) {
         LOGE("send %s\n", strerror(errno));
         return;

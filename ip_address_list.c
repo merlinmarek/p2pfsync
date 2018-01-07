@@ -19,8 +19,8 @@ ip_address_entry_type* find_entry(ip_address_entry_type** list, struct sockaddr*
 		}
 		if(iterator_address->sa_family == AF_INET6) {
 			// for ipv6 we need to compare 16 bytes
-			void* given_ipv6 = (void*)&(((struct sockaddr_in6*)ip_address)->sin6_addr.__in6_u);
-			void* iterator_ipv6 = (void*)&(((struct sockaddr_in6*)iterator_address)->sin6_addr.__in6_u);
+			void* given_ipv6 = (void*)&(((struct sockaddr_in6*)ip_address)->sin6_addr);
+			void* iterator_ipv6 = (void*)&(((struct sockaddr_in6*)iterator_address)->sin6_addr);
 			if(memcmp(given_ipv6, iterator_ipv6, 16) == 0) {
 				// we have a match
 				return ip_address_iterator;

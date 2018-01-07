@@ -130,7 +130,7 @@ void get_ip_address_string_prefixed(struct sockaddr* address, char* buffer, size
 			// the ipv4 address is stored in the last 4 bytes of the 16 byte ipv6 address
             strncpy(&buffer[index], "IPv4 ", 5);
             index += 5;
-			char* ipv4AddressStart = ((char*)(&ipv6_address->sin6_addr.__in6_u)) + 12;
+			char* ipv4AddressStart = ((char*)(&ipv6_address->sin6_addr)) + 12;
 			struct in_addr* ipv4_address = (struct in_addr*)ipv4AddressStart;
 			inet_ntop(AF_INET, ipv4_address, &buffer[index], buffer_size - index);
 		} else {
