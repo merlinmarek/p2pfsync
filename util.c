@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -170,6 +171,22 @@ int is_ipv4_mapped(struct sockaddr* address) {
 		return 1;
 	}
 	return 0;
+}
+
+// needs error checking!!
+// needs error checking!!
+int mkdirp(const char* path) {
+	char* path_copy = strdup(path);
+	char* p = NULL;
+	for(p = path_copy + 1; *p; p++) {
+		if(*p == '/') {
+			*p = 0;
+			mkdir(path_copy, S_IRWXU);
+			*p = '/';
+		}
+	}
+    mkdir(path_copy, S_IRWXU);
+    return 0;
 }
 
 // this is a helper function to receive a length prefixed tcp message with a maximum length and a timeout, THIS IS A BLOCKING OPERATION

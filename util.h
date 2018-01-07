@@ -13,6 +13,7 @@ void get_hex_string(const unsigned char* in_buffer, const size_t count, char* bu
 void get_ip_address_string_prefixed(struct sockaddr* address, char* buffer, const size_t buffer_size);
 double get_passed_time(struct timeval t);
 int is_ipv4_mapped(struct sockaddr* address);
+int mkdirp(const char* path);
 // this is a helper function to receive a length prefixed tcp message with a maximum length and a timeout, THIS IS A BLOCKING OPERATION
 int tcp_message_receive(int socketfd, char* buffer, size_t buffer_size, double timeout_seconds);
 // this is a helper function to send a length prefixed tcp message, THIS IS A BLOCKING OPERATION

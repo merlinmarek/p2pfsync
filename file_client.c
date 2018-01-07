@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -85,7 +86,33 @@ void download_file(struct sockaddr* address, const char* file_path) {
     	return;
     }
     // we should have the remote file in memory now
-    LOGI("remote file: %s has contents: %*.*s", file_path, 0, recv_return, file_buffer);
+    // WE SHOULD PROBABLY CALCULATE SOME CHECKSUM HERE
+    //LOGI("remote file: %s has contents: %*.*s", file_path, 0, recv_return, file_buffer);
+
+    char local_file_path[PATH_MAX];
+    strcpy(local_file_path, BASE_PATH);
+    strcat(local_file_path, file_path);
+    LOGI("writing to file system: %s\n", local_file_path);
+    // first create parent directories, so we can open
+    // remove the file name first
+    char* p;
+    for(p = local_file_path + strlen(local_file_path) - 1; *p != '/'; p--);
+    *p = 0;
+    mkdirp(local_file_path);
+    *p = '/';
+
+    int filefd = open(local_file_path, O_RDWR | O_CREAT, 0666);
+    if(filefd == -1) {
+    	// file creation failed
+    	LOGE("open: %s\n", strerror(errno));
+    	close(socketfd);
+    	free(file_buffer);
+    	return;
+    }
+    int written_bytes = write(filefd, file_buffer, recv_return);
+    if(written_bytes == -1) {
+    	LOGE("write: %s\n", strerror(errno));
+    }
     close(socketfd);
     free(file_buffer);
 }
