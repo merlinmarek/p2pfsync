@@ -261,7 +261,7 @@ void get_own_id(char buffer[6]) {
 	// now we can iterate over the interfaces
 	struct ifaddrs* interface;
 	for(interface = interface_list; interface != NULL; interface = interface->ifa_next) {
-		if(interface->ifa_addr->sa_family == AF_PACKET && strcmp(interface->ifa_name, "lo") != 0) {
+		if(interface->ifa_addr && interface->ifa_addr->sa_family == AF_PACKET && strcmp(interface->ifa_name, "lo") != 0) {
 			// mac address is in AF_PACKET interfaces
 			// we also need to skip the loopback device because its mac is always just zeros
 			struct sockaddr_ll* address = (struct sockaddr_ll*)interface->ifa_addr;
