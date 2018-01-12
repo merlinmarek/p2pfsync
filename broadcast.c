@@ -358,6 +358,7 @@ void send_ipv4_broadcast(char sender_id[6]) {
 	int success;
 	if((success = getifaddrs(&interface_list)) != 0) {
 		LOGD("getifaddrs: %s\n", gai_strerror(success));
+		close(broadcast_socket);
 		return;
 	}
 
@@ -385,6 +386,7 @@ void send_ipv4_broadcast(char sender_id[6]) {
         }
 	}
 	freeifaddrs(interface_list);
+	close(broadcast_socket);
 }
 
 // the multicast is sent once to the multicast address
@@ -414,4 +416,5 @@ void send_ipv6_multicast(char sender_id[6]) {
 	if(sendto(multicast_socket, &packet, sizeof(packet), 0, (struct sockaddr*)&ipv6_address, sizeof(ipv6_address)) == -1) {
 		LOGD("sendto: %s\n", strerror(errno));
 	}
+	close(multicast_socket);
 }

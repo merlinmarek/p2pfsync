@@ -6,6 +6,7 @@
 #include "broadcast.h"
 #include "command_client.h"
 #include "command_server.h"
+#include "defines.h"
 #include "file_client.h"
 #include "file_server.h"
 #include "logger.h"
@@ -29,6 +30,11 @@ int main() {
 	initialize_peer_list_lock();
 
 	set_shutdown(0); // make sure we do not shutdown right after starting
+
+	// make sure that the log folder exists
+	mkdirp("./log");
+	// make sure the sync folder exists
+	mkdirp(BASE_PATH);
 
 	/*
 	 *
@@ -62,7 +68,7 @@ int main() {
 	 *
 	 */
 
-	set_log_level(LOG_INFO);
+	//set_log_level(LOG_INFO);
 
 	pthread_t broadcast_thread_id;
 	pthread_t command_client_thread_id;
