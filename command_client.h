@@ -1,14 +1,18 @@
+/**
+ * @file command_client.h
+ * @brief This is the command client module
+ *
+ * This module has its own thread. It is responsible for enumerating the files of remote peers
+ * and creating "download file" jobs for the file client to process. For files that are locally
+ * present (identified by their path only) no download jobs are created.
+ */
+
 #ifndef COMMAND_CLIENT_H
 #define COMMAND_CLIENT_H
 
 #include <sys/socket.h>
 
 #include "message_queue.h"
-
-// this thread should get new peers from the broadcast thread
-// then it should try to connect to them and enumerate the files on the remote
-// for each file that is found on the remote and not locally, it should create a download job for the
-// file download thread
 
 /**
  * @brief This is the thread's main function. It is started from the main thread.

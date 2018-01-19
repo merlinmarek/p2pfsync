@@ -1,3 +1,12 @@
+/**
+ * @file file_server.h
+ * @brief This is the file server module.
+ *
+ * This module has its own thread. It is responsible to serve files requested by the file client module. This module works like a seperate process
+ * in total isolation from the rest of the application. When a peer requests a file the file server checks if the file is locally present and if so
+ * reads it from memory and sends it to the remote peer.
+ */
+
 #ifndef FILE_UPLOAD_H
 #define FILE_UPLOAD_H
 

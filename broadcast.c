@@ -24,10 +24,11 @@
 #define MESSAGE_TYPE_DISCOVER 10
 #define MESSAGE_TYPE_AVAILABLE 11
 
+/// A packet wrapper structure for broadcast packets
 typedef struct {
-	char protocol_id[8]; // has to be "P2PFSYNC"
-	unsigned char message_type; // has to be one of the MESSAGE_TYPE_... defines
-	char sender_id[6]; // has to be the sender id which is obtained by getOwnId
+	char protocol_id[8]; //!< The protocol id, this must be "P2PFSYNC" otherwise the packet gets discarded by other peers
+	unsigned char message_type; //!< The type of message, has to be one of the MESSAGE_TYPE defines found in this module
+	char sender_id[6]; //!< The sender id of the peer broadcasting this packet
 } __attribute__((packed)) packet_type; // should be packed for size and consistency across nodes
 
 // helper functions should be static so they are not visible outside of this module
@@ -94,15 +95,6 @@ void* broadcast_thread(void* user_data) {
             send_ipv6_multicast(own_id);
             send_ipv4_broadcast(own_id);
             LOGD("sending broadcast discovery\n");
-
-            struct sockaddr_in ip;
-            ip.sin_family = AF_INET;
-            ip.sin_port = htons(12345);
-            ip.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-            // this is only for testing purposes
-            //peer_seen("abcdef", (struct sockaddr*)&ip);
-
             //print_peer_list();
 		}
 

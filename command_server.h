@@ -1,8 +1,16 @@
+/**
+ * @file command_server.h
+ * @brief This is the command server module
+ *
+ * This module has its own thread. It behaves like a seperate process with complete isolation from the rest of the application.
+ * This module is responsible for responding to file enumeration requests from other peers. When another peer sends a message of the format
+ * "GET <path to some directory>" the command server enumerates all files that are locally present in the requested directory and sends
+ * this list back to the peer.
+ */
+
 #ifndef COMMAND_SERVER_H
 #define COMMAND_SERVER_H
 
-// this module should only wait for connections and answer
-// GET <path> request. It should list directory contents and send them to a remote
 #include <sys/time.h>
 #include <sys/socket.h>
 

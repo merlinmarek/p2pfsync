@@ -1,3 +1,8 @@
+/**
+ * @file message_queue.h
+ * @brief This file provides a thread safe queue data structure and appropriate algorithms to work with it
+ */
+
 #ifndef MESSAGE_QUEUE_H
 #define MESSAGE_QUEUE_H
 

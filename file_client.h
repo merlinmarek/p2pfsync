@@ -1,3 +1,12 @@
+/**
+ * @file file_client.h
+ * @brief This is the file client module.
+ *
+ * This module has its own thread. The file client is responsible for processing "download file" jobs created
+ * by the command client. Each job is a single file to download from a single peer. So for each job the file
+ * client connects to a peer and downloads a single file which is the written to the local file system.
+ */
+
 #ifndef FILE_DOWNLOAD_H
 #define FILE_DOWNLOAD_H
 

@@ -1,3 +1,10 @@
+/**
+ * @file util.h
+ * @brief This file provides utility functions.
+ *
+ * All functionality that is not exclusive to a module is in this file. The functions mostly consists of socket helper functions and string formatting functions.
+ */
+
 #ifndef UTIL_H
 #define UTIL_H
 

@@ -1,9 +1,11 @@
+/**
+ * @file shutdown.h
+ * @brief This module provides a single thread safe variable to properly shutdown all threads of this application
+ */
+
 #ifndef SHUTDOWN_H
 #define SHUTDOWN_H
 
-// this module wraps a single variable to provide a thread safe indicator whether the modules should shut down or not
-
-// these mutex functions MUST be called
 /**
  * @brief This function initializes the mutex for this module. This should be the first function that is called on this module
  */

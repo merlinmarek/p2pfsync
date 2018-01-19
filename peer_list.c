@@ -13,15 +13,16 @@
 
 void append_peer(char id[6]);
 
+/// A single node in the peer list
 typedef struct peer {
 	// link to the next peer
-	struct peer* next_peer;
+	struct peer* next_peer; //!< A link to the next peer
 
 	// id of the peer
-	char id[6];
+	char id[6]; //!< The id of this peer
 
 	// a list of ip addresses
-	struct ip_address_entry* ip_address;
+	struct ip_address_entry* ip_address; //!< A list of known ip addresses of this peer
 } peer_t;
 
 static pthread_mutex_t peer_list_lock;

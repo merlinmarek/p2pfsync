@@ -1,3 +1,8 @@
+/**
+ * @file ip_address_list.h
+ * @brief This file provides a data structure and appropriate algorithms to store ip addresses with a timestamp in a list.
+ */
+
 #ifndef IP_ADDRESS_LIST_H
 #define IP_ADDRESS_LIST_H
 

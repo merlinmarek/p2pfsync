@@ -1,3 +1,15 @@
+/**
+ * @file broadcast.h
+ * @brief This is the broadcast module.
+ *
+ * This module has its own thread and is responsible for managing the peer discovery.
+ * The thread periodically sends a broadcast packet to the local network containing the peer id. If a
+ * broadcast packet of another peer is received, the broadcast thread does two things. First it sends
+ * back a response so the discovering peer knows about this peer as well. Second a "peer seen" message
+ * is generated an send to the command client thread so it can checkout the files that the remote peer
+ * has.
+ */
+
 #ifndef BROADCAST_H
 #define BROADCAST_H
 

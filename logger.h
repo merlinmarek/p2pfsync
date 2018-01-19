@@ -1,3 +1,12 @@
+/**
+ * @file logger.h
+ * @brief This module exposes logging functionality.
+ *
+ * The logger can be set to different levels so low priority messages can be filtered out beforehand.
+ * Thread safe access and convenience macros are provided to enable easy logging. On startup the logger
+ * will create a log file in the directory "logs" named with the current date.
+ */
+
 #ifndef LOGGER_H
 #define LOGGER_H
 
