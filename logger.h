@@ -1,19 +1,20 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-// these mutex functions MUST be called
 void initialize_logger_lock();
 void destroy_logger_lock();
 
 typedef enum {
-	LOG_DEBUG = 0,
-	LOG_INFO = 1,
-	LOG_WARNING = 2,
-	LOG_ERROR = 3
+	LOG_DEBUG = 0,  //!< LOG_DEBUG
+	LOG_INFO = 1,   //!< LOG_INFO
+	LOG_WARNING = 2,//!< LOG_WARNING
+	LOG_ERROR = 3   //!< LOG_ERROR
 } log_level_t;
 
-// use this to set the log level
-// default is LOG_DEBUG
+/**
+ * @brief Set the log level for future calls to the logger.
+ * @param level One of ::log_level_t.
+ */
 void set_log_level(log_level_t level);
 
 // the logger function does not need to be called directly

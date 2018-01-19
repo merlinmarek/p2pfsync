@@ -175,7 +175,7 @@ int is_ipv4_mapped(struct sockaddr* address) {
 
 // needs error checking!!
 // needs error checking!!
-int mkdirp(const char* path) {
+void mkdirp(const char* path) {
 	char* path_copy = strdup(path);
 	char* p = NULL;
 	for(p = path_copy + 1; *p; p++) {
@@ -186,7 +186,6 @@ int mkdirp(const char* path) {
 		}
 	}
     mkdir(path_copy, S_IRWXU);
-    return 0;
 }
 
 // this is a helper function to receive a length prefixed tcp message with a maximum length and a timeout, THIS IS A BLOCKING OPERATION
