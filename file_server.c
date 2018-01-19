@@ -116,10 +116,9 @@ void* file_server_thread(void* tid) {
 }
 
 void handle_client(int socketfd, char* receive_buffer, size_t received_bytes) {
-    receive_buffer[received_bytes] = ' '; // for strtok
-    const char* delim = " ";
-    const char* request_id = strtok(receive_buffer, delim);
-    const char* request_path = strtok(NULL, delim);
+    receive_buffer[received_bytes] = '>'; // for strtok
+    const char* request_id = strtok(receive_buffer, " ");
+    char* request_path = strtok(NULL, ">");
     if(request_id == NULL) {
     	LOGE("invalid request: %s\n", request_id);
     	return;
@@ -127,7 +126,6 @@ void handle_client(int socketfd, char* receive_buffer, size_t received_bytes) {
     char* local_path = malloc(strlen(BASE_PATH) + strlen(request_path) + 1);
     memcpy(local_path, BASE_PATH, strlen(BASE_PATH));
     strcpy(local_path + strlen(BASE_PATH), request_path);
-    //LOGD("id: %s, path: %s\n", request_id, local_path);
 
     struct stat info;
     if(lstat(local_path, &info) != 0 || !S_ISREG(info.st_mode)) {
