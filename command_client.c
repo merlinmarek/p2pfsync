@@ -27,7 +27,7 @@ void command_client_thread_send_message(message_queue_entry_type* message) {
 	message_queue_push(message_queue, message);
 }
 
-void* command_client_thread(void* tid) {
+void* command_client_thread(void* user_data) {
 	LOGD("started\n");
 	// this has to be called otherwise this thread will not be able to receive any messages
 	message_queue = message_queue_create_queue();

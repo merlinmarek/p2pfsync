@@ -51,7 +51,7 @@ void broadcast_thread_send_message(message_queue_entry_type* message) {
 // this status should be in the peerList
 // whenever the broadcastThread discovers a new peer it should add it to the
 // peerList
-void* broadcast_thread(void* tid) {
+void* broadcast_thread(void* user_data) {
 	LOGD("started\n");
 
 	// this has to be called otherwise this thread will not be able to receive any messages
