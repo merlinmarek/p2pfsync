@@ -1,5 +1,16 @@
 /**
 \mainpage This is the p2pfsync documentation main page
 
-p2pfsync (peer to peer file synchronizer) is a command line utility to automatically synchronize files between peers on a local network. All files in the directory ./sync_files relative to the active directory are available to other peers. When p2pfsync discovers a file that is present at another peer this file gets downloaded and added to the sync_files directory. Furthermore, logs are created in the ./logs directory.
+p2pfsync (peer to peer file synchronizer) is a command line utility to automatically synchronize files between peers on a local network. All files in the directory ./sync_files relative to the active directory are available to other peers. When p2pfsync discovers a file that is present at another peer this file gets downloaded and added to the sync_files directory. Furthermore, logs are created in the ./log directory.
+
+Build the executable by going into the sources directory and executing
+\code{.sh}
+gcc *.c -lpthread -o p2pfsync
+\endcode
+There are also executables provided in the ./bin directory. These were build on arch linux (64bit version) and ubuntu (32bit version). If those don't work you need to build the executable from source as described before.
+
+To start the application simply type:
+\code{.sh}
+./p2pfsync
+\endcode
 */
