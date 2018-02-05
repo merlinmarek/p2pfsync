@@ -13,4 +13,9 @@ To start the application simply type:
 \code{.sh}
 ./p2pfsync
 \endcode
+
+To build this documentation from source go into the sources directory and type:
+\code{.sh}
+doxygen
+\endcode
 */
